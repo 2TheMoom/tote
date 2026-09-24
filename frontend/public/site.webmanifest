@@ -1,0 +1,16 @@
+{
+  "name": "Tote",
+  "short_name": "Tote",
+  "description": "A verifiable pari-mutuel prediction market on GenLayer - markets settle deterministically against a fixed, checkable source.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0a0a0d",
+  "theme_color": "#0a0a0d",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}

@@ -36,17 +36,20 @@ pari-mutuel shares - a winning staker's payout is their fraction of the
 winning pool, multiplied across the full combined pool, no protocol fee.
 
 **Known platform limitation, disclosed rather than hidden:** `emit_transfer`
-does not currently deliver value on GenLayer's Bradbury testnet
+has an open, intermittent bug on GenLayer's Bradbury testnet
 ([genvm-manager#20](https://github.com/genlayerlabs/genvm-manager/issues/20)) -
 the same disclosed issue already documented on this account's Waypoint and
-Salvage Arbiter projects. Every state transition up to and including the
-payout computation is real and independently verifiable; the final balance
-movement is blocked by this platform bug, not a defect here.
+Salvage Arbiter projects. It does not fire on every call; in this project's
+own live verification below, `claim()`'s payout transfer succeeded and was
+independently confirmed against the recipient's on-chain balance. When the
+bug does trigger, every state transition up to and including the payout
+computation is still real and independently verifiable - only the final
+balance movement is blocked, and that's a platform bug, not a defect here.
 
 ## Live deployment
 Deployed on **GenLayer Bradbury Testnet** (chain ID 4221):
 - **Contract:** [`0x18d050c7674b93C45Ead9d3DAB1250A6D4813485`](https://explorer-bradbury.genlayer.com/address/0x18d050c7674b93C45Ead9d3DAB1250A6D4813485)
-- **Frontend:** `<pending>`
+- **Frontend:** [tote-frontend.vercel.app](https://tote-frontend.vercel.app)
 - Verified via 37 passing direct-mode tests (`python -m pytest tests/direct/`),
   covering the full lifecycle (open → resolved → finalized, and the
   disputed branch), every validation guard (duplicate/empty-field checks,
@@ -55,6 +58,36 @@ Deployed on **GenLayer Bradbury Testnet** (chain ID 4221):
   neither (or both) markers are found, the challenge-window boundary, both
   dispute verdicts (uphold and overturn - including the outcome flip),
   and real pari-mutuel payout accounting.
+
+### Live-verified with real GEN
+Three real markets run against the deployed contract on Bradbury, each
+resolving against this repo's own README as the verification source
+(`yes_marker: "no protocol fee"`, `no_marker: "protocol fee applies"` -
+the true text is "no protocol fee applies to payouts"):
+
+- **tote-live-1** - a timing mistake (90-second lock window) let real
+  consensus latency push `lock_time` past before both stakes could land;
+  both stake calls correctly reverted `FINISHED_WITH_ERROR`, confirmed via
+  `get_market` that `lock_time` had genuinely passed. A test-design error,
+  not a contract bug; the market was left unstaked and abandoned.
+- **tote-live-2** - realistic 10-minute window. Two real stakers backed
+  opposite sides (0.006 GEN YES, 0.003 GEN NO), `resolve()` correctly
+  determined `outcome: "yes"`, and the losing NO staker filed a genuine
+  `challenge()`. `resolve_dispute()` hit Bradbury's LLM-path
+  `DETERMINISTIC_VIOLATION` degradation twice in a row (the same
+  session-wide condition that blocked Summit's `refresh()` and Waypoint's
+  `resolve_dispute()` repeatedly) - `get_market` confirmed the market
+  state stayed safely `"disputed"` and uncorrupted after both failed
+  attempts. Left parked for a future retry once the platform's LLM
+  capacity recovers.
+- **tote-live-3** - a full clean happy path, start to finish, all real
+  GEN: `create_market` → `stake` (0.004 GEN YES, 0.001 GEN NO, two
+  different wallets) → `resolve` (`outcome: "yes"`, 5/5 AGREE) →
+  `finalize` after the challenge window closed with no dispute (5/5
+  AGREE) → `claim` by the YES staker, paid out the full 0.005 GEN pool
+  (5/5 AGREE, `FINISHED_WITH_RETURN`) - confirmed delivered by reading
+  the recipient's on-chain balance afterward, not just the transaction
+  result.
 
 ## What's included
 - `contracts/tote.py` — the Tote Intelligent Contract

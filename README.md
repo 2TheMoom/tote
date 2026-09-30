@@ -35,32 +35,61 @@ the window with no dispute; `claim(market_id)` then pays out real
 pari-mutuel shares - a winning staker's payout is their fraction of the
 winning pool, multiplied across the full combined pool, no protocol fee.
 
-**Known platform limitation, disclosed rather than hidden:** `emit_transfer`
-has an open, intermittent bug on GenLayer's Bradbury testnet
-([genvm-manager#20](https://github.com/genlayerlabs/genvm-manager/issues/20)) -
-the same disclosed issue already documented on this account's Waypoint and
-Salvage Arbiter projects. It does not fire on every call; in this project's
-own live verification below, `claim()`'s payout transfer succeeded and was
-independently confirmed against the recipient's on-chain balance. When the
-bug does trigger, every state transition up to and including the payout
-computation is still real and independently verifiable - only the final
-balance movement is blocked, and that's a platform bug, not a defect here.
+A market that can never reach a terminal state on its own - one side
+never gets a stake, the verification source never yields exactly one
+marker, or a dispute can't reach validator consensus - doesn't lock
+stakes forever: `reclaim_stake(market_id, side)` lets any staker recover
+their own original stake once a 24-hour recovery window has passed with
+no resolution.
+
+**Payouts and refunds go through `gl.evm.contract_interface` (`Payee`),
+not `gl.get_contract_at()`.** Stakers are EOAs (plain wallets), and
+`gl.get_contract_at(addr).emit_transfer(...)` is an internal
+Intelligent-Contract dispatch message - for an address holding no
+contract code, that message is resolved by a handler that doesn't
+reliably reach validator majority, so the payout can leave this contract
+and be credited to nobody, intermittently and unpredictably.
+`gl.evm.contract_interface` instead emits a genuine external chain-layer
+value transfer (`EthSend` with empty calldata) - the SDK's documented
+primitive for paying an EOA. This was flagged directly by a GenLayer
+steward reviewing this project; previously this repo (like several
+others on this account) mischaracterized the resulting intermittent
+failures as an unconfirmed platform bug in
+[genvm-manager#20](https://github.com/genlayerlabs/genvm-manager/issues/20)
+rather than what it actually was: the wrong transfer primitive for the
+recipient type.
 
 ## Live deployment
 Deployed on **GenLayer Bradbury Testnet** (chain ID 4221):
-- **Contract:** [`0x18d050c7674b93C45Ead9d3DAB1250A6D4813485`](https://explorer-bradbury.genlayer.com/address/0x18d050c7674b93C45Ead9d3DAB1250A6D4813485)
+- **Contract:** [`0x0036D9FCfDF58cDa298bFAaDDF363702471EF567`](https://explorer-bradbury.genlayer.com/address/0x0036D9FCfDF58cDa298bFAaDDF363702471EF567)
 - **Frontend:** [tote-frontend.vercel.app](https://tote-frontend.vercel.app)
-- Verified via 37 passing direct-mode tests (`python -m pytest tests/direct/`),
+- Verified via 48 passing direct-mode tests (`python -m pytest tests/direct/`),
   covering the full lifecycle (open → resolved → finalized, and the
   disputed branch), every validation guard (duplicate/empty-field checks,
   same-marker rejection, the creator-can't-stake rule, the both-pools-must-
   be-nonempty guard before resolving), a clean revert-then-retry when
   neither (or both) markers are found, the challenge-window boundary, both
   dispute verdicts (uphold and overturn - including the outcome flip),
-  and real pari-mutuel payout accounting.
+  real pari-mutuel payout accounting, `reclaim_stake`'s recovery paths
+  (stuck-open, stuck-disputed, too-early, double-reclaim, independent
+  stakers reclaiming separately), a failed/unreachable adjudication
+  reverting cleanly instead of defaulting to either verdict, and the
+  dispute prompt genuinely wrapping untrusted input in isolating tags
+  (verified by requiring those tags in the mock match pattern itself, not
+  just asserting on the output).
 
-### Live-verified with real GEN
-Three real markets run against the deployed contract on Bradbury, each
+### Live-verified with real GEN (previous deployment)
+The runs below were against `0x18d050c7674b93C45Ead9d3DAB1250A6D4813485`,
+superseded by the current address after the `Payee` fix and the other
+steward-requested changes above. They still stand as evidence that the
+deterministic resolve/dispute machinery works correctly on real chain
+data; **tote-live-3's successful payout is exactly the kind of
+intermittent success the old `gl.get_contract_at()` path could produce -
+not proof it was reliable.** A fresh end-to-end run against the current
+address, isolating the `Payee` mechanism specifically, is documented
+immediately below this section.
+
+Three real markets run against the previous deployment on Bradbury, each
 resolving against this repo's own README as the verification source
 (`yes_marker: "no protocol fee"`, `no_marker: "protocol fee applies"` -
 the true text is "no protocol fee applies to payouts"):
@@ -89,6 +118,17 @@ the true text is "no protocol fee applies to payouts"):
   the recipient's on-chain balance afterward, not just the transaction
   result.
 
+### Payee fix verification (current deployment)
+Direct-mode tests (`test_reclaim_stake_*`, the adjudication-hardening
+tests) exercise every new code path deterministically. A real end-to-end
+`stake → resolve → finalize → claim` cycle against the current address,
+isolating whether `Payee`'s payout is *reliable* rather than merely
+possible, needs a payable transaction - the bare `genlayer write` CLI has
+no flag for attaching native value to a call at all (`--fee-value` is the
+consensus fee deposit, not the call's value). A ready-to-run script
+(`verify-payee-live.mjs`, `genlayer-js` with real `value:`) is included
+in this repo for whoever holds the deployer key to run directly.
+
 ## What's included
 - `contracts/tote.py` — the Tote Intelligent Contract
 - `tests/direct/test_tote.py` — direct-mode tests (in-memory, mocked web/LLM)
@@ -97,6 +137,8 @@ the true text is "no protocol fee applies to payouts"):
 - A Next.js 16 frontend (TypeScript, TanStack Query, Radix UI) — a premium
   financial-instrument treatment: a vesica mark, large serif pool figures
   with a live proportion bar, and a polished wallet-connect sequence
+- `verify-payee-live.mjs` — a real end-to-end script proving the `Payee`
+  payout mechanism delivers value, for whoever holds the deployer key
 - Configuration file template and deployment scripts
 
 ## Requirements
@@ -183,9 +225,14 @@ The app will be available at http://localhost:3000/.
    passes with no dispute.
 7. **`claim(market_id)`** — a winning staker claims their pari-mutuel
    share: `payout = (my_stake / winning_pool) * (yes_pool + no_pool)`.
-8. **`get_market`** / **`get_all_market_ids`** / **`get_stake`** /
-   **`has_claimed`** / **`get_yes_stakers`** / **`get_no_stakers`** — read
-   back a market's full state, its stakers, and a wallet's position.
+8. **`reclaim_stake(market_id, side)`** — permissionless recovery for a
+   market stuck 24 hours past `resolve_after` and still `open`, or past
+   `challenge_deadline` and still `disputed`: any staker gets back their
+   own original stake, not a payout.
+9. **`get_market`** / **`get_all_market_ids`** / **`get_stake`** /
+   **`has_claimed`** / **`has_reclaimed`** / **`get_yes_stakers`** /
+   **`get_no_stakers`** — read back a market's full state, its stakers,
+   and a wallet's position.
 
 ## Testing Strategy
 

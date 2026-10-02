@@ -1,7 +1,10 @@
-// Proves the Payee (gl.evm.contract_interface) EOA-transfer fix actually
-// delivers value, where the old gl.get_contract_at().emit_transfer() path
-// silently lost it sometimes. Runs Tote's full undisputed happy path for
-// real: create_market -> stake (both sides) -> resolve -> finalize ->
+// Proves the Payee payout mechanism delivers value for real:
+// gl.evm.contract_interface-wrapped emit_transfer (EthSend, an external
+// chain-layer message through this IC's own ghost contract) - the SDK's
+// documented path for paying a wallet, not gl.get_contract_at().
+// emit_transfer(), an internal GenVM-layer message with nowhere valid to
+// land at a plain EOA's address. Runs Tote's full undisputed happy path
+// for real: create_market -> stake (both sides) -> resolve -> finalize ->
 // claim, then reads the winner's on-chain balance before and after to
 // confirm it actually rose by the pari-mutuel payout.
 //
@@ -18,7 +21,7 @@
 import { createAccount, createClient } from "genlayer-js";
 import { testnetBradbury } from "genlayer-js/chains";
 
-const CONTRACT = "0x0036D9FCfDF58cDa298bFAaDDF363702471EF567";
+const CONTRACT = "0xc98bb97b456B8f709adb2C0a7db2ce2eB0A136C8";
 const MARKET_ID = "tote-live-fix-" + Date.now();
 const YES_VALUE = 4000000000000000n; // 0.004 GEN
 const NO_VALUE = 1000000000000000n; // 0.001 GEN
@@ -126,7 +129,7 @@ async function main() {
   console.log(`\nYES staker balance after: ${balanceAfter} wei`);
   const delta = balanceAfter - balanceBefore;
   console.log(`Delta: ${delta} wei (expected roughly +${YES_VALUE - 0n}... net of the 0.004 GEN already staked, full pool 0.005 GEN returned)`);
-  console.log(delta > 0n ? "\n✔ CONFIRMED: Payee delivered a real payout." : "\n✖ No positive delta - investigate.");
+  console.log(delta > 0n ? "\n✔ CONFIRMED: the native transfer delivered a real payout." : "\n✖ No positive delta - investigate.");
 }
 
 main().catch((e) => {

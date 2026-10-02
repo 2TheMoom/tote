@@ -61,9 +61,9 @@ recipient type.
 
 ## Live deployment
 Deployed on **GenLayer Bradbury Testnet** (chain ID 4221):
-- **Contract:** [`0x0036D9FCfDF58cDa298bFAaDDF363702471EF567`](https://explorer-bradbury.genlayer.com/address/0x0036D9FCfDF58cDa298bFAaDDF363702471EF567)
+- **Contract:** [`0xc98bb97b456B8f709adb2C0a7db2ce2eB0A136C8`](https://explorer-bradbury.genlayer.com/address/0xc98bb97b456B8f709adb2C0a7db2ce2eB0A136C8)
 - **Frontend:** [tote-frontend.vercel.app](https://tote-frontend.vercel.app)
-- Verified via 48 passing direct-mode tests (`python -m pytest tests/direct/`),
+- Verified via 59 passing direct-mode tests (`python -m pytest tests/direct/`),
   covering the full lifecycle (open → resolved → finalized, and the
   disputed branch), every validation guard (duplicate/empty-field checks,
   same-marker rejection, the creator-can't-stake rule, the both-pools-must-
@@ -118,16 +118,28 @@ the true text is "no protocol fee applies to payouts"):
   the recipient's on-chain balance afterward, not just the transaction
   result.
 
-### Payee fix verification (current deployment)
-Direct-mode tests (`test_reclaim_stake_*`, the adjudication-hardening
-tests) exercise every new code path deterministically. A real end-to-end
-`stake → resolve → finalize → claim` cycle against the current address,
-isolating whether `Payee`'s payout is *reliable* rather than merely
-possible, needs a payable transaction - the bare `genlayer write` CLI has
-no flag for attaching native value to a call at all (`--fee-value` is the
-consensus fee deposit, not the call's value). A ready-to-run script
-(`verify-payee-live.mjs`, `genlayer-js` with real `value:`) is included
-in this repo for whoever holds the deployer key to run directly.
+### Second steward round: payout reconciliation and dispute-reason floor
+A later steward pass found the `Payee` fix alone insufficient: `claim()`/
+`reclaim_stake()` treated a silent `emit_transfer` as delivery with no way
+back if it failed to land, and `challenge()` accepted any non-empty
+reason, down to a single trivial word, for a dispute that then escalates
+to real LLM adjudication. Fixed by recording every payout attempt in
+`pending_payouts` before firing it - `claimed`/`reclaimed` lock the
+entitlement in once (so it's computed only once), but
+`retry_claim_payout()`/`retry_reclaim_payout()` let a wallet re-attempt
+its own pending delivery at no risk to anyone else's funds - and by adding
+`MIN_DISPUTE_REASON_LENGTH` (20 characters) alongside the existing
+maximum. Direct-mode tests (`test_reclaim_stake_*`, the adjudication-
+hardening tests, `test_*_records_pending_payout_for_retry`,
+`test_challenge_too_short_reason_fails`) exercise every new path
+deterministically. A real end-to-end `stake → resolve → finalize → claim`
+cycle against the current address, isolating whether `Payee`'s payout is
+*reliable* rather than merely possible, needs a payable transaction - the
+bare `genlayer write` CLI has no flag for attaching native value to a call
+at all (`--fee-value` is the consensus fee deposit, not the call's value).
+A ready-to-run script (`verify-payee-live.mjs`, `genlayer-js` with real
+`value:`) is included in this repo for whoever holds the deployer key to
+run directly.
 
 ## What's included
 - `contracts/tote.py` — the Tote Intelligent Contract

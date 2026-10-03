@@ -532,6 +532,30 @@ def test_retry_claim_payout_without_a_pending_payout_fails(direct_vm, direct_dep
         contract.retry_claim_payout("tote-1")
 
 
+def test_retry_claim_payout_blocked_once_balance_confirms_delivery(
+    direct_vm, direct_deploy, direct_alice, direct_bob, direct_charlie
+):
+    """The real bug a steward caught: pending_payouts alone never proved
+    delivery, so a recipient whose payout actually succeeded could call
+    retry forever and drain funds owed to other stakers. Once the
+    recipient's own balance shows the payout already landed, retry must
+    refuse to re-send it - and clear the record so it can't even be asked
+    again."""
+    contract = direct_deploy(CONTRACT)
+    direct_vm.warp(T0)
+    _to_finalized(direct_vm, contract, direct_alice, direct_bob, direct_charlie, outcome="yes")
+
+    direct_vm.sender = direct_bob
+    contract.claim("tote-1")
+
+    direct_vm.deal(direct_bob, 10**18)  # simulate the payout having actually landed
+    with direct_vm.expect_revert("already delivered"):
+        contract.retry_claim_payout("tote-1")
+
+    with direct_vm.expect_revert("No pending payout"):
+        contract.retry_claim_payout("tote-1")  # cleared, not just blocked once
+
+
 # ---------------------------------------------------------------------------
 # reclaim_stake
 # ---------------------------------------------------------------------------
@@ -709,6 +733,24 @@ def test_retry_reclaim_payout_without_a_pending_payout_fails(direct_vm, direct_d
     direct_vm.sender = direct_bob
     with direct_vm.expect_revert("No pending payout"):
         contract.retry_reclaim_payout("tote-1", "yes")
+
+
+def test_retry_reclaim_payout_blocked_once_balance_confirms_delivery(direct_vm, direct_deploy, direct_alice, direct_bob):
+    contract = direct_deploy(CONTRACT)
+    direct_vm.warp(T0)
+    _create(direct_vm, contract, direct_alice)
+    _stake(direct_vm, contract, direct_bob, "yes", 500)
+
+    direct_vm.warp("2026-01-02T01:10:00Z")
+    direct_vm.sender = direct_bob
+    contract.reclaim_stake("tote-1", "yes")
+
+    direct_vm.deal(direct_bob, 10**18)  # simulate the refund having actually landed
+    with direct_vm.expect_revert("already delivered"):
+        contract.retry_reclaim_payout("tote-1", "yes")
+
+    with direct_vm.expect_revert("No pending payout"):
+        contract.retry_reclaim_payout("tote-1", "yes")  # cleared, not just blocked once
 
 
 def test_reclaim_stake_resolved_not_yet_stuck_fails(

@@ -21,7 +21,7 @@
 import { createAccount, createClient } from "genlayer-js";
 import { testnetBradbury } from "genlayer-js/chains";
 
-const CONTRACT = "0xc98bb97b456B8f709adb2C0a7db2ce2eB0A136C8";
+const CONTRACT = "0xa9465dBb90ab60d1D27Dca893bb024a39Ffa7C31";
 const MARKET_ID = "tote-live-fix-" + Date.now();
 const YES_VALUE = 4000000000000000n; // 0.004 GEN
 const NO_VALUE = 1000000000000000n; // 0.001 GEN

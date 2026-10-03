@@ -33,6 +33,10 @@ def _pay(recipient: Address, value: u256) -> None:
     Payee(recipient).emit_transfer(value=value)
 
 
+def _balance(addr: Address) -> u256:
+    return Payee(addr).balance
+
+
 @allow_storage
 @dataclass
 class Market:
@@ -54,17 +58,11 @@ class Market:
 
 
 class Tote(gl.Contract):
-    """Verifiable pari-mutuel prediction market. Stakers pool GEN on a
-    binary outcome; the pot splits proportionally among correct stakers -
-    no LLM for the common path. resolve() fetches verification_url
-    deterministically; a CHALLENGE_WINDOW_SECONDS dispute escalates to
-    gl.nondet.exec_prompt, only the verdict consensus-critical.
-    reclaim_stake() recovers a stuck-open market after
-    RECOVERY_TIMEOUT_SECONDS; resolve_stale_dispute() handles a stuck
-    dispute instead. _pay() can fail to land independently of the call
-    that attempts it, so payouts record the owed amount in
-    pending_payouts rather than treat a silent send as delivery;
-    retry_claim_payout()/retry_reclaim_payout() re-attempt it."""
+    """Verifiable pari-mutuel prediction market - no LLM for the common
+    path, a dispute escalates to gl.nondet.exec_prompt. _pay() can fail to
+    land independently of the call - pending_payouts/pending_floor record
+    the owed amount and a balance snapshot; retry_* re-attempts, clearing
+    once the balance confirms delivery so a success can't be re-sent."""
 
     markets: TreeMap[str, Market]
     market_ids: DynArray[str]
@@ -74,6 +72,7 @@ class Tote(gl.Contract):
     claimed: TreeMap[str, bool]
     reclaimed: TreeMap[str, bool]
     pending_payouts: TreeMap[str, u256]  # key -> amount still owed/retriable
+    pending_floor: TreeMap[str, u256]  # key -> recipient balance snapshot before the first attempt
 
     def __init__(self):
         pass
@@ -327,14 +326,21 @@ class Tote(gl.Contract):
         # Locks the entitlement in once, not proof of delivery - pending_payouts
         # lets retry_claim_payout() re-attempt without re-deriving a new amount.
         self.claimed[claim_key] = True
-        self.pending_payouts[claim_key] = payout
+        self._mark_pending(claim_key, sender, payout)
         _pay(sender, payout)
+
+    def _mark_pending(self, key: str, recipient: Address, amount: u256) -> None:
+        self.pending_payouts[key] = amount
+        self.pending_floor[key] = _balance(recipient)
 
     def _retry(self, key: str) -> None:
         sender = gl.message.sender_address
         amount = self.pending_payouts.get(key, u256(0))
         if amount == 0:
             raise gl.vm.UserError("No pending payout for this wallet")
+        if _balance(sender) >= self.pending_floor.get(key, u256(0)) + amount:
+            self.pending_payouts[key] = u256(0)
+            raise gl.vm.UserError("Payout already delivered - nothing to retry")
         _pay(sender, amount)
 
     @gl.public.write
@@ -383,7 +389,7 @@ class Tote(gl.Contract):
             raise gl.vm.UserError("Already reclaimed for this wallet/side")
 
         self.reclaimed[reclaim_key] = True
-        self.pending_payouts[reclaim_key] = amount
+        self._mark_pending(reclaim_key, sender, amount)
         _pay(sender, amount)
         if m.status != "abandoned":
             m.status = "abandoned"

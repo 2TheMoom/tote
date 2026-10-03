@@ -61,9 +61,9 @@ recipient type.
 
 ## Live deployment
 Deployed on **GenLayer Bradbury Testnet** (chain ID 4221):
-- **Contract:** [`0xc98bb97b456B8f709adb2C0a7db2ce2eB0A136C8`](https://explorer-bradbury.genlayer.com/address/0xc98bb97b456B8f709adb2C0a7db2ce2eB0A136C8)
+- **Contract:** [`0xa9465dBb90ab60d1D27Dca893bb024a39Ffa7C31`](https://explorer-bradbury.genlayer.com/address/0xa9465dBb90ab60d1D27Dca893bb024a39Ffa7C31)
 - **Frontend:** [tote-frontend.vercel.app](https://tote-frontend.vercel.app)
-- Verified via 59 passing direct-mode tests (`python -m pytest tests/direct/`),
+- Verified via 61 passing direct-mode tests (`python -m pytest tests/direct/`),
   covering the full lifecycle (open → resolved → finalized, and the
   disputed branch), every validation guard (duplicate/empty-field checks,
   same-marker rejection, the creator-can't-stake rule, the both-pools-must-
@@ -125,19 +125,33 @@ back if it failed to land, and `challenge()` accepted any non-empty
 reason, down to a single trivial word, for a dispute that then escalates
 to real LLM adjudication. Fixed by recording every payout attempt in
 `pending_payouts` before firing it - `claimed`/`reclaimed` lock the
-entitlement in once (so it's computed only once), but
+entitlement in once (so it's computed only once), and
 `retry_claim_payout()`/`retry_reclaim_payout()` let a wallet re-attempt
-its own pending delivery at no risk to anyone else's funds - and by adding
-`MIN_DISPUTE_REASON_LENGTH` (20 characters) alongside the existing
-maximum. Direct-mode tests (`test_reclaim_stake_*`, the adjudication-
-hardening tests, `test_*_records_pending_payout_for_retry`,
-`test_challenge_too_short_reason_fails`) exercise every new path
-deterministically. A real end-to-end `stake → resolve → finalize → claim`
-cycle against the current address, isolating whether `Payee`'s payout is
-*reliable* rather than merely possible, needs a payable transaction - the
-bare `genlayer write` CLI has no flag for attaching native value to a call
-at all (`--fee-value` is the consensus fee deposit, not the call's value).
-A ready-to-run script (`verify-payee-live.mjs`, `genlayer-js` with real
+its own pending delivery - and by adding `MIN_DISPUTE_REASON_LENGTH` (20
+characters) alongside the existing maximum.
+
+### Third steward round: a real fund-safety bug in the retry itself
+This fix was still wrong: `pending_payouts` was never cleared after a
+successful delivery, so a recipient whose payout actually landed could
+call retry again anyway, firing a second real transfer of the same
+amount and consuming GEN owed to other stakers - an unbounded drain, not
+a rare edge case, and the steward caught it correctly. Fixed with a
+`pending_floor` snapshot: the recipient's balance is recorded right
+before the first attempt, and retry now reads the recipient's *current*
+balance and compares it against `floor + amount` - if the payout already
+landed, retry clears `pending_payouts` and refuses instead of re-sending.
+`test_retry_*_blocked_once_balance_confirms_delivery` proves this
+directly (simulates delivery via the direct-mode harness's `deal()`,
+confirms retry refuses and the record is actually cleared, not just
+blocked once). 61 tests pass, lint clean. Redeployed:
+`0xa9465dBb90ab60d1D27Dca893bb024a39Ffa7C31`.
+
+A real end-to-end `stake → resolve → finalize → claim` cycle against the
+current address, isolating whether `Payee`'s payout is *reliable* rather
+than merely possible, needs a payable transaction - the bare `genlayer
+write` CLI has no flag for attaching native value to a call at all
+(`--fee-value` is the consensus fee deposit, not the call's value). A
+ready-to-run script (`verify-payee-live.mjs`, `genlayer-js` with real
 `value:`) is included in this repo for whoever holds the deployer key to
 run directly.
 

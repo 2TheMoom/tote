@@ -9,6 +9,7 @@ RECOVERY_TIMEOUT_SECONDS = 86400  # 24h - a stuck market unwinds after this
 MAX_QUESTION_LENGTH = 2000
 MIN_DISPUTE_REASON_LENGTH = 20
 MAX_DISPUTE_REASON_LENGTH = 2000
+MAX_RETRIES = 3  # bounds worst-case exposure to (1 + MAX_RETRIES)x the owed amount
 
 REQUEST_HEADERS = {
     "Accept": "text/html,application/json,*/*",
@@ -73,6 +74,7 @@ class Tote(gl.Contract):
     reclaimed: TreeMap[str, bool]
     pending_payouts: TreeMap[str, u256]  # key -> amount still owed/retriable
     pending_floor: TreeMap[str, u256]  # key -> recipient balance snapshot before the first attempt
+    retry_count: TreeMap[str, u256]  # key -> number of retry attempts so far
 
     def __init__(self):
         pass
@@ -334,13 +336,30 @@ class Tote(gl.Contract):
         self.pending_floor[key] = _balance(recipient)
 
     def _retry(self, key: str) -> None:
+        """Two fixes over the first version, both steward-caught: (1) the
+        "already delivered" path used to clear pending_payouts and then
+        raise - raising reverts the whole call, so that clear never
+        actually persisted, leaving the balance check exploitable the
+        same way every time. Now it returns normally instead. (2) retry
+        eligibility was inferred purely from the sender's current
+        balance, which spending/transferring funds afterward can push
+        back below the recorded floor - making an already-delivered
+        payout look retryable again indefinitely. MAX_RETRIES now bounds
+        the worst case to a fixed, small multiple of the owed amount."""
         sender = gl.message.sender_address
         amount = self.pending_payouts.get(key, u256(0))
         if amount == 0:
             raise gl.vm.UserError("No pending payout for this wallet")
         if _balance(sender) >= self.pending_floor.get(key, u256(0)) + amount:
             self.pending_payouts[key] = u256(0)
-            raise gl.vm.UserError("Payout already delivered - nothing to retry")
+            return  # delivered - clear and exit cleanly, no raise, no re-send
+        count = self.retry_count.get(key, u256(0))
+        if count >= MAX_RETRIES:
+            raise gl.vm.UserError(
+                f"Retry limit ({MAX_RETRIES}) reached - balance still doesn't confirm "
+                "delivery; this needs manual review, not another automatic retry"
+            )
+        self.retry_count[key] = count + 1
         _pay(sender, amount)
 
     @gl.public.write
@@ -444,3 +463,13 @@ class Tote(gl.Contract):
     @gl.public.view
     def get_no_stakers(self, market_id: str) -> list:
         return [a.as_hex for a in self.no_stakers.get(market_id, [])]
+
+    @gl.public.view
+    def get_pending_claim_payout(self, market_id: str, wallet: str) -> u256:
+        key = f"{market_id}_{Address(wallet).as_hex}".lower()
+        return self.pending_payouts.get(key, u256(0))
+
+    @gl.public.view
+    def get_pending_reclaim_payout(self, market_id: str, side: str, wallet: str) -> u256:
+        key = f"reclaimed_{self._stake_key(market_id, side, Address(wallet))}"
+        return self.pending_payouts.get(key, u256(0))

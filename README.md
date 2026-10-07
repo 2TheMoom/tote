@@ -61,9 +61,9 @@ recipient type.
 
 ## Live deployment
 Deployed on **GenLayer Bradbury Testnet** (chain ID 4221):
-- **Contract:** [`0xa9465dBb90ab60d1D27Dca893bb024a39Ffa7C31`](https://explorer-bradbury.genlayer.com/address/0xa9465dBb90ab60d1D27Dca893bb024a39Ffa7C31)
+- **Contract:** [`0xfC0200Fb66906B67869739C22A2Da181C7ac6eaB`](https://explorer-bradbury.genlayer.com/address/0xfC0200Fb66906B67869739C22A2Da181C7ac6eaB)
 - **Frontend:** [tote-frontend.vercel.app](https://tote-frontend.vercel.app)
-- Verified via 61 passing direct-mode tests (`python -m pytest tests/direct/`),
+- Verified via 65 passing direct-mode tests (`python -m pytest tests/direct/`),
   covering the full lifecycle (open → resolved → finalized, and the
   disputed branch), every validation guard (duplicate/empty-field checks,
   same-marker rejection, the creator-can't-stake rule, the both-pools-must-
@@ -154,6 +154,22 @@ write` CLI has no flag for attaching native value to a call at all
 ready-to-run script (`verify-payee-live.mjs`, `genlayer-js` with real
 `value:`) is included in this repo for whoever holds the deployer key to
 run directly.
+
+### Fourth steward round: the balance check itself was unsound
+The `pending_floor` balance check above was still wrong in both
+directions, not just unbounded: a delayed balance update can make a
+transfer that already landed look undelivered (firing a duplicate), and
+an unrelated balance rise can make a transfer that never landed look
+delivered, silently losing it forever - GenVM exposes no other signal to
+confirm delivery. Removed the balance check entirely; `retry_claim_payout`/
+`retry_reclaim_payout` are now blind, resending up to `MAX_RETRIES` with
+no balance inspection at all. Each retry key is already derived from the
+caller's own address (`{market_id}_{sender}` / `reclaimed_{stake_key}`),
+so a wallet was already structurally unable to retry anyone else's
+payout - this fix only removed the unsound part. `test_retry_*_ignores_
+recipient_balance` and `test_retry_*_by_non_{claimant,staker}_fails` cover
+both properties directly. 65 tests pass, lint clean, 19,789 bytes.
+Redeployed: `0xfC0200Fb66906B67869739C22A2Da181C7ac6eaB`.
 
 ## What's included
 - `contracts/tote.py` — the Tote Intelligent Contract

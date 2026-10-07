@@ -34,10 +34,6 @@ def _pay(recipient: Address, value: u256) -> None:
     Payee(recipient).emit_transfer(value=value)
 
 
-def _balance(addr: Address) -> u256:
-    return Payee(addr).balance
-
-
 @allow_storage
 @dataclass
 class Market:
@@ -61,9 +57,14 @@ class Market:
 class Tote(gl.Contract):
     """Verifiable pari-mutuel prediction market - no LLM for the common
     path, a dispute escalates to gl.nondet.exec_prompt. _pay() can fail to
-    land independently of the call - pending_payouts/pending_floor record
-    the owed amount and a balance snapshot; retry_* re-attempts, clearing
-    once the balance confirms delivery so a success can't be re-sent."""
+    land independently of the call - pending_payouts records the owed
+    amount; retry_* re-attempts, bounded by MAX_RETRIES. GenVM exposes no
+    signal that can confirm delivery, so retry is deliberately blind
+    rather than inferring "already delivered" from the recipient's
+    balance, which can both miss a genuine failure (an unrelated balance
+    rise) and duplicate a genuine success (a delayed balance update). Each
+    key is derived from the caller's own address, so retry is already
+    scoped to whoever originally earned that specific payout."""
 
     markets: TreeMap[str, Market]
     market_ids: DynArray[str]
@@ -73,7 +74,6 @@ class Tote(gl.Contract):
     claimed: TreeMap[str, bool]
     reclaimed: TreeMap[str, bool]
     pending_payouts: TreeMap[str, u256]  # key -> amount still owed/retriable
-    pending_floor: TreeMap[str, u256]  # key -> recipient balance snapshot before the first attempt
     retry_count: TreeMap[str, u256]  # key -> number of retry attempts so far
 
     def __init__(self):
@@ -328,37 +328,28 @@ class Tote(gl.Contract):
         # Locks the entitlement in once, not proof of delivery - pending_payouts
         # lets retry_claim_payout() re-attempt without re-deriving a new amount.
         self.claimed[claim_key] = True
-        self._mark_pending(claim_key, sender, payout)
+        self._mark_pending(claim_key, payout)
         _pay(sender, payout)
 
-    def _mark_pending(self, key: str, recipient: Address, amount: u256) -> None:
+    def _mark_pending(self, key: str, amount: u256) -> None:
         self.pending_payouts[key] = amount
-        self.pending_floor[key] = _balance(recipient)
 
     def _retry(self, key: str) -> None:
-        """Two fixes over the first version, both steward-caught: (1) the
-        "already delivered" path used to clear pending_payouts and then
-        raise - raising reverts the whole call, so that clear never
-        actually persisted, leaving the balance check exploitable the
-        same way every time. Now it returns normally instead. (2) retry
-        eligibility was inferred purely from the sender's current
-        balance, which spending/transferring funds afterward can push
-        back below the recorded floor - making an already-delivered
-        payout look retryable again indefinitely. MAX_RETRIES now bounds
-        the worst case to a fixed, small multiple of the owed amount."""
+        """A steward-caught design flaw, not just a bug: using the
+        recipient's wallet balance as proof of delivery is unsound in both
+        directions - a delayed balance update can make a landed transfer
+        look undelivered (duplicating it), and an unrelated balance rise
+        can make a lost transfer look delivered (silently losing it).
+        GenVM exposes no other signal to confirm delivery, so retry is now
+        blind: bounded only by MAX_RETRIES. Already scoped to the right
+        wallet since every key is derived from the caller's own address."""
         sender = gl.message.sender_address
         amount = self.pending_payouts.get(key, u256(0))
         if amount == 0:
             raise gl.vm.UserError("No pending payout for this wallet")
-        if _balance(sender) >= self.pending_floor.get(key, u256(0)) + amount:
-            self.pending_payouts[key] = u256(0)
-            return  # delivered - clear and exit cleanly, no raise, no re-send
         count = self.retry_count.get(key, u256(0))
         if count >= MAX_RETRIES:
-            raise gl.vm.UserError(
-                f"Retry limit ({MAX_RETRIES}) reached - balance still doesn't confirm "
-                "delivery; this needs manual review, not another automatic retry"
-            )
+            raise gl.vm.UserError(f"Retry limit ({MAX_RETRIES}) reached")
         self.retry_count[key] = count + 1
         _pay(sender, amount)
 
@@ -408,7 +399,7 @@ class Tote(gl.Contract):
             raise gl.vm.UserError("Already reclaimed for this wallet/side")
 
         self.reclaimed[reclaim_key] = True
-        self._mark_pending(reclaim_key, sender, amount)
+        self._mark_pending(reclaim_key, amount)
         _pay(sender, amount)
         if m.status != "abandoned":
             m.status = "abandoned"

@@ -507,81 +507,126 @@ def test_claim_not_finalized_fails(direct_vm, direct_deploy, direct_alice, direc
         contract.claim("tote-1")
 
 
-def test_claim_records_pending_payout_for_retry(direct_vm, direct_deploy, direct_alice, direct_bob, direct_charlie):
-    """emit_transfer can fail to land independently of this call (a known,
-    acknowledged platform issue - see _Recipient's docstring), so claim()
-    must leave the owed amount retriable rather than only ever attempting
-    delivery once."""
+def _capture_sends(direct_vm):
+    """Record every transfer the contract emits, as (recipient_hex, value)."""
+    sends = []
+
+    def hook(vm, request):
+        if isinstance(request, dict) and "EthSend" in request:
+            send = request["EthSend"]
+            sends.append((send["address"].as_hex.lower(), int(send["value"])))
+        return None
+
+    direct_vm._gl_call_hook = hook
+    return sends
+
+
+def _hex(addr_bytes):
+    return ("0x" + addr_bytes.hex()).lower()
+
+
+def test_claim_emits_exactly_one_transfer_of_the_entitlement(
+    direct_vm, direct_deploy, direct_alice, direct_bob, direct_charlie
+):
     contract = direct_deploy(CONTRACT)
+    sends = _capture_sends(direct_vm)
     direct_vm.warp(T0)
     _to_finalized(direct_vm, contract, direct_alice, direct_bob, direct_charlie, outcome="yes")
 
     direct_vm.sender = direct_bob
     contract.claim("tote-1")
 
-    contract.retry_claim_payout("tote-1")  # must not revert - payout still on record
+    assert sends == [(_hex(direct_bob), 2000)]
+    assert contract.get_claim_payout("tote-1", "0x" + direct_bob.hex()) == 2000
 
 
-def test_retry_claim_payout_without_a_pending_payout_fails(direct_vm, direct_deploy, direct_alice, direct_bob):
+def test_second_claim_emits_nothing(direct_vm, direct_deploy, direct_alice, direct_bob, direct_charlie):
+    """The steward's duplicate-delivery case: once an entitlement has been
+    scheduled, no call can emit a second transfer for it."""
     contract = direct_deploy(CONTRACT)
+    sends = _capture_sends(direct_vm)
+    direct_vm.warp(T0)
+    _to_finalized(direct_vm, contract, direct_alice, direct_bob, direct_charlie, outcome="yes")
+
+    direct_vm.sender = direct_bob
+    contract.claim("tote-1")
+    with direct_vm.expect_revert("Already claimed"):
+        contract.claim("tote-1")
+
+    assert len(sends) == 1
+
+
+def test_no_retry_entry_points_exist(direct_vm, direct_deploy):
+    """Re-sending a payout that is merely slow to finalize is how duplicate
+    delivery happened; there is deliberately no method that re-sends."""
+    contract = direct_deploy(CONTRACT)
+    for name in ("retry_claim_payout", "retry_reclaim_payout"):
+        assert not hasattr(contract, name)
+
+
+def test_every_winner_paid_exactly_once_and_pool_conserved(
+    direct_vm, direct_deploy, direct_alice, direct_bob, direct_charlie
+):
+    dave = bytes.fromhex("dd" * 20)
+    contract = direct_deploy(CONTRACT)
+    sends = _capture_sends(direct_vm)
     direct_vm.warp(T0)
     _create(direct_vm, contract, direct_alice)
+    _stake(direct_vm, contract, direct_bob, "yes", 300)
+    _stake(direct_vm, contract, dave, "yes", 400)
+    _stake(direct_vm, contract, direct_charlie, "no", 1000)
+    direct_vm.warp("2026-01-01T01:10:00Z")
+    _mock_outcome(direct_vm, "yes")
+    contract.resolve("tote-1")
+    direct_vm.warp("2026-01-01T01:25:00Z")
+    contract.finalize("tote-1")
 
-    direct_vm.sender = direct_bob
-    with direct_vm.expect_revert("No pending payout"):
-        contract.retry_claim_payout("tote-1")
+    for winner in (direct_bob, dave):
+        direct_vm.sender = winner
+        contract.claim("tote-1")
+        with direct_vm.expect_revert("Already claimed"):
+            contract.claim("tote-1")
+
+    # 1700 pool: bob 300*1700//700 = 728, dave 400*1700//700 = 971
+    assert sorted(sends) == sorted([(_hex(direct_bob), 728), (_hex(dave), 971)])
+    acct = contract.get_accounting()
+    assert acct["total_staked"] == 1700
+    assert acct["total_scheduled"] == 1699  # 1 wei of rounding dust stays in the contract
+    assert acct["total_scheduled"] <= acct["total_staked"]
 
 
-def test_retry_claim_payout_ignores_recipient_balance(
+def test_accounting_tracks_a_payout_until_it_lands(
     direct_vm, direct_deploy, direct_alice, direct_bob, direct_charlie
 ):
-    """A steward-caught design flaw: using the recipient's wallet balance
-    as proof of delivery can both duplicate an already-delivered transfer
-    and silently "clear" a payout that never actually landed. Retry is now
-    deliberately blind to balance - it stays on record and keeps counting
-    toward MAX_RETRIES no matter what the recipient's wallet holds."""
+    """get_accounting() is how a scheduled-but-not-yet-final payout is
+    observed, read-only: in_flight is non-zero until the transfer lands."""
     contract = direct_deploy(CONTRACT)
+    _capture_sends(direct_vm)
     direct_vm.warp(T0)
     _to_finalized(direct_vm, contract, direct_alice, direct_bob, direct_charlie, outcome="yes")
+    me = direct_vm._contract_address
+
+    direct_vm.deal(me, 2000)  # both stakes held
+    acct = contract.get_accounting()
+    assert (acct["unscheduled"], acct["in_flight"], acct["shortfall"]) == (2000, 0, 0)
 
     direct_vm.sender = direct_bob
     contract.claim("tote-1")
+    acct = contract.get_accounting()  # scheduled, transaction not final yet
+    assert (acct["unscheduled"], acct["in_flight"], acct["shortfall"]) == (0, 2000, 0)
 
-    direct_vm.deal(direct_bob, 10**18)  # a huge unrelated balance bump
-    contract.retry_claim_payout("tote-1")  # still retries, not silently treated as "delivered"
-    assert contract.get_pending_claim_payout("tote-1", "0x" + direct_bob.hex()) != 0
+    direct_vm.deal(me, 0)  # the transfer landed on finalization
+    acct = contract.get_accounting()
+    assert (acct["in_flight"], acct["shortfall"]) == (0, 0)
 
 
-def test_retry_claim_payout_by_non_claimant_fails(
-    direct_vm, direct_deploy, direct_alice, direct_bob, direct_charlie
-):
+def test_accounting_reports_a_shortfall(direct_vm, direct_deploy, direct_alice, direct_bob, direct_charlie):
     contract = direct_deploy(CONTRACT)
     direct_vm.warp(T0)
     _to_finalized(direct_vm, contract, direct_alice, direct_bob, direct_charlie, outcome="yes")
-
-    direct_vm.sender = direct_bob
-    contract.claim("tote-1")
-
-    direct_vm.sender = direct_charlie  # never claimed, so has no key of their own
-    with direct_vm.expect_revert("No pending payout"):
-        contract.retry_claim_payout("tote-1")
-
-
-def test_retry_claim_payout_bounded_by_max_retries(
-    direct_vm, direct_deploy, direct_alice, direct_bob, direct_charlie
-):
-    contract = direct_deploy(CONTRACT)
-    direct_vm.warp(T0)
-    _to_finalized(direct_vm, contract, direct_alice, direct_bob, direct_charlie, outcome="yes")
-
-    direct_vm.sender = direct_bob
-    contract.claim("tote-1")
-
-    for _ in range(3):  # MAX_RETRIES
-        contract.retry_claim_payout("tote-1")
-
-    with direct_vm.expect_revert("Retry limit"):
-        contract.retry_claim_payout("tote-1")
+    direct_vm.deal(direct_vm._contract_address, 1500)
+    acct = contract.get_accounting()
+    assert (acct["in_flight"], acct["shortfall"]) == (0, 500)
 
 
 # ---------------------------------------------------------------------------
@@ -740,8 +785,9 @@ def test_reclaim_stake_invalid_side_fails(direct_vm, direct_deploy, direct_alice
         contract.reclaim_stake("tote-1", "maybe")
 
 
-def test_reclaim_stake_records_pending_payout_for_retry(direct_vm, direct_deploy, direct_alice, direct_bob):
+def test_reclaim_stake_emits_exactly_one_transfer(direct_vm, direct_deploy, direct_alice, direct_bob):
     contract = direct_deploy(CONTRACT)
+    sends = _capture_sends(direct_vm)
     direct_vm.warp(T0)
     _create(direct_vm, contract, direct_alice)
     _stake(direct_vm, contract, direct_bob, "yes", 500)
@@ -749,70 +795,12 @@ def test_reclaim_stake_records_pending_payout_for_retry(direct_vm, direct_deploy
     direct_vm.warp("2026-01-02T01:10:00Z")
     direct_vm.sender = direct_bob
     contract.reclaim_stake("tote-1", "yes")
+    with direct_vm.expect_revert("Already reclaimed"):
+        contract.reclaim_stake("tote-1", "yes")
 
-    contract.retry_reclaim_payout("tote-1", "yes")  # must not revert
-
-
-def test_retry_reclaim_payout_without_a_pending_payout_fails(direct_vm, direct_deploy, direct_alice, direct_bob):
-    contract = direct_deploy(CONTRACT)
-    direct_vm.warp(T0)
-    _create(direct_vm, contract, direct_alice)
-
-    direct_vm.sender = direct_bob
-    with direct_vm.expect_revert("No pending payout"):
-        contract.retry_reclaim_payout("tote-1", "yes")
-
-
-def test_retry_reclaim_payout_ignores_recipient_balance(direct_vm, direct_deploy, direct_alice, direct_bob):
-    """A steward-caught design flaw: using the recipient's wallet balance
-    as proof of delivery can both duplicate an already-delivered transfer
-    and silently "clear" a payout that never actually landed. Retry is now
-    deliberately blind to balance - it stays on record and keeps counting
-    toward MAX_RETRIES no matter what the recipient's wallet holds."""
-    contract = direct_deploy(CONTRACT)
-    direct_vm.warp(T0)
-    _create(direct_vm, contract, direct_alice)
-    _stake(direct_vm, contract, direct_bob, "yes", 500)
-
-    direct_vm.warp("2026-01-02T01:10:00Z")
-    direct_vm.sender = direct_bob
-    contract.reclaim_stake("tote-1", "yes")
-
-    direct_vm.deal(direct_bob, 10**18)  # a huge unrelated balance bump
-    contract.retry_reclaim_payout("tote-1", "yes")  # still retries, not silently "delivered"
-    assert contract.get_pending_reclaim_payout("tote-1", "yes", "0x" + direct_bob.hex()) != 0
-
-
-def test_retry_reclaim_payout_by_non_staker_fails(direct_vm, direct_deploy, direct_alice, direct_bob, direct_charlie):
-    contract = direct_deploy(CONTRACT)
-    direct_vm.warp(T0)
-    _create(direct_vm, contract, direct_alice)
-    _stake(direct_vm, contract, direct_bob, "yes", 500)
-
-    direct_vm.warp("2026-01-02T01:10:00Z")
-    direct_vm.sender = direct_bob
-    contract.reclaim_stake("tote-1", "yes")
-
-    direct_vm.sender = direct_charlie  # never staked, so has no key of their own
-    with direct_vm.expect_revert("No pending payout"):
-        contract.retry_reclaim_payout("tote-1", "yes")
-
-
-def test_retry_reclaim_payout_bounded_by_max_retries(direct_vm, direct_deploy, direct_alice, direct_bob):
-    contract = direct_deploy(CONTRACT)
-    direct_vm.warp(T0)
-    _create(direct_vm, contract, direct_alice)
-    _stake(direct_vm, contract, direct_bob, "yes", 500)
-
-    direct_vm.warp("2026-01-02T01:10:00Z")
-    direct_vm.sender = direct_bob
-    contract.reclaim_stake("tote-1", "yes")
-
-    for _ in range(3):  # MAX_RETRIES
-        contract.retry_reclaim_payout("tote-1", "yes")
-
-    with direct_vm.expect_revert("Retry limit"):
-        contract.retry_reclaim_payout("tote-1", "yes")
+    assert sends == [(_hex(direct_bob), 500)]
+    assert contract.get_reclaim_payout("tote-1", "yes", "0x" + direct_bob.hex()) == 500
+    assert contract.get_accounting()["total_scheduled"] == 500
 
 
 def test_reclaim_stake_resolved_not_yet_stuck_fails(

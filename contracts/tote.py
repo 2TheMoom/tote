@@ -9,7 +9,6 @@ RECOVERY_TIMEOUT_SECONDS = 86400  # 24h - a stuck market unwinds after this
 MAX_QUESTION_LENGTH = 2000
 MIN_DISPUTE_REASON_LENGTH = 20
 MAX_DISPUTE_REASON_LENGTH = 2000
-MAX_RETRIES = 3  # bounds worst-case exposure to (1 + MAX_RETRIES)x the owed amount
 
 REQUEST_HEADERS = {
     "Accept": "text/html,application/json,*/*",
@@ -19,9 +18,10 @@ REQUEST_HEADERS = {
 
 @gl.evm.contract_interface
 class Payee:
-    """Documented chain-layer path to pay a wallet. Can still fail to land
-    on today's Bradbury (genvm-manager#20, ack'd, node-side fix pending) -
-    see pending_payouts/retry_*."""
+    """Documented chain-layer path to pay a wallet (an external message).
+    External messages always execute on finalization of the transaction
+    that emitted them, never earlier, and are dropped with it if that
+    transaction is rejected or overturned."""
 
     class View:
         pass
@@ -56,25 +56,26 @@ class Market:
 
 class Tote(gl.Contract):
     """Verifiable pari-mutuel prediction market - no LLM for the common
-    path, a dispute escalates to gl.nondet.exec_prompt. _pay() can fail to
-    land independently of the call - pending_payouts records the owed
-    amount; retry_* re-attempts, bounded by MAX_RETRIES. GenVM exposes no
-    signal that can confirm delivery, so retry is deliberately blind
-    rather than inferring "already delivered" from the recipient's
-    balance, which can both miss a genuine failure (an unrelated balance
-    rise) and duplicate a genuine success (a delayed balance update). Each
-    key is derived from the caller's own address, so retry is already
-    scoped to whoever originally earned that specific payout."""
+    path, a dispute escalates to gl.nondet.exec_prompt.
+
+    Payouts are exactly-once by construction. Each entitlement (a claim or
+    a stake reclaim) is recorded in `payouts` and its transfer emitted in
+    the same transaction, and there is no code path that emits a second
+    transfer for a key already in `payouts`. The transfer lands when that
+    transaction finalizes; if the transaction is rejected or overturned,
+    the record and the transfer are dropped together and the wallet can
+    simply claim again. A transfer that is slow to land is never re-sent,
+    which is what previously allowed duplicate delivery. get_accounting()
+    reconciles the ledger against the contract's real balance, read-only."""
 
     markets: TreeMap[str, Market]
     market_ids: DynArray[str]
     yes_stakers: TreeMap[str, DynArray[Address]]
     no_stakers: TreeMap[str, DynArray[Address]]
     stake_amounts: TreeMap[str, u256]
-    claimed: TreeMap[str, bool]
-    reclaimed: TreeMap[str, bool]
-    pending_payouts: TreeMap[str, u256]  # key -> amount still owed/retriable
-    retry_count: TreeMap[str, u256]  # key -> number of retry attempts so far
+    payouts: TreeMap[str, u256]  # key -> amount scheduled; presence = claimed/reclaimed
+    total_staked: u256  # every wei that entered through stake()
+    total_scheduled: u256  # every wei ever scheduled out through _schedule()
 
     def __init__(self):
         pass
@@ -165,6 +166,7 @@ class Tote(gl.Contract):
             else:
                 self.no_stakers.get_or_insert_default(market_id).append(sender)
         self.stake_amounts[key] = existing + value
+        self.total_staked += value
 
         if side == "yes":
             m.total_yes_pool += value
@@ -314,7 +316,7 @@ class Tote(gl.Contract):
 
         sender = gl.message.sender_address
         claim_key = f"{market_id}_{sender.as_hex}".lower()
-        if self.claimed.get(claim_key, False):
+        if claim_key in self.payouts:
             raise gl.vm.UserError("Already claimed for this market")
 
         my_stake = self.stake_amounts.get(self._stake_key(market_id, m.outcome, sender), u256(0))
@@ -325,37 +327,15 @@ class Tote(gl.Contract):
         total_pool = m.total_yes_pool + m.total_no_pool
         payout = (my_stake * total_pool) // winning_pool
 
-        # Locks the entitlement in once, not proof of delivery - pending_payouts
-        # lets retry_claim_payout() re-attempt without re-deriving a new amount.
-        self.claimed[claim_key] = True
-        self._mark_pending(claim_key, payout)
-        _pay(sender, payout)
+        self._schedule(claim_key, sender, payout)
 
-    def _mark_pending(self, key: str, amount: u256) -> None:
-        self.pending_payouts[key] = amount
-
-    def _retry(self, key: str) -> None:
-        """A steward-caught design flaw, not just a bug: using the
-        recipient's wallet balance as proof of delivery is unsound in both
-        directions - a delayed balance update can make a landed transfer
-        look undelivered (duplicating it), and an unrelated balance rise
-        can make a lost transfer look delivered (silently losing it).
-        GenVM exposes no other signal to confirm delivery, so retry is now
-        blind: bounded only by MAX_RETRIES. Already scoped to the right
-        wallet since every key is derived from the caller's own address."""
-        sender = gl.message.sender_address
-        amount = self.pending_payouts.get(key, u256(0))
-        if amount == 0:
-            raise gl.vm.UserError("No pending payout for this wallet")
-        count = self.retry_count.get(key, u256(0))
-        if count >= MAX_RETRIES:
-            raise gl.vm.UserError(f"Retry limit ({MAX_RETRIES}) reached")
-        self.retry_count[key] = count + 1
-        _pay(sender, amount)
-
-    @gl.public.write
-    def retry_claim_payout(self, market_id: str) -> None:
-        self._retry(f"{market_id}_{gl.message.sender_address.as_hex}".lower())
+    def _schedule(self, key: str, recipient: Address, amount: u256) -> None:
+        """The only place a transfer is emitted. Callers refuse a key already
+        in `payouts`, and the record and the transfer share one transaction,
+        so they finalize or are dropped together."""
+        self.payouts[key] = amount
+        self.total_scheduled += amount
+        _pay(recipient, amount)
 
     @gl.public.write
     def resolve_stale_dispute(self, market_id: str) -> None:
@@ -395,19 +375,12 @@ class Tote(gl.Contract):
             raise gl.vm.UserError("No stake to reclaim for this wallet/side")
 
         reclaim_key = f"reclaimed_{key}"
-        if self.reclaimed.get(reclaim_key, False):
+        if reclaim_key in self.payouts:
             raise gl.vm.UserError("Already reclaimed for this wallet/side")
 
-        self.reclaimed[reclaim_key] = True
-        self._mark_pending(reclaim_key, amount)
-        _pay(sender, amount)
+        self._schedule(reclaim_key, sender, amount)
         if m.status != "abandoned":
             m.status = "abandoned"
-
-    @gl.public.write
-    def retry_reclaim_payout(self, market_id: str, side: str) -> None:
-        sender = gl.message.sender_address
-        self._retry(f"reclaimed_{self._stake_key(market_id, side, sender)}")
 
     @gl.public.view
     def get_market(self, market_id: str) -> dict:
@@ -440,12 +413,12 @@ class Tote(gl.Contract):
 
     @gl.public.view
     def has_claimed(self, market_id: str, wallet: str) -> bool:
-        return self.claimed.get(f"{market_id}_{Address(wallet).as_hex}".lower(), False)
+        return f"{market_id}_{Address(wallet).as_hex}".lower() in self.payouts
 
     @gl.public.view
     def has_reclaimed(self, market_id: str, side: str, wallet: str) -> bool:
         key = self._stake_key(market_id, side, Address(wallet))
-        return self.reclaimed.get(f"reclaimed_{key}", False)
+        return f"reclaimed_{key}" in self.payouts
 
     @gl.public.view
     def get_yes_stakers(self, market_id: str) -> list:
@@ -456,11 +429,29 @@ class Tote(gl.Contract):
         return [a.as_hex for a in self.no_stakers.get(market_id, [])]
 
     @gl.public.view
-    def get_pending_claim_payout(self, market_id: str, wallet: str) -> u256:
+    def get_claim_payout(self, market_id: str, wallet: str) -> u256:
         key = f"{market_id}_{Address(wallet).as_hex}".lower()
-        return self.pending_payouts.get(key, u256(0))
+        return self.payouts.get(key, u256(0))
 
     @gl.public.view
-    def get_pending_reclaim_payout(self, market_id: str, side: str, wallet: str) -> u256:
+    def get_reclaim_payout(self, market_id: str, side: str, wallet: str) -> u256:
         key = f"reclaimed_{self._stake_key(market_id, side, Address(wallet))}"
-        return self.pending_payouts.get(key, u256(0))
+        return self.payouts.get(key, u256(0))
+
+    @gl.public.view
+    def get_accounting(self) -> dict:
+        """Read-only reconciliation. Everything staked and not yet scheduled
+        is still owed to someone, so the balance must cover it; anything
+        above that is scheduled payouts still waiting for their
+        transaction to finalize. in_flight returning to 0 means every
+        scheduled payout has landed. Nothing here can trigger a transfer."""
+        balance = int(self.balance)
+        unscheduled = int(self.total_staked) - int(self.total_scheduled)
+        return {
+            "balance": balance,
+            "total_staked": int(self.total_staked),
+            "total_scheduled": int(self.total_scheduled),
+            "unscheduled": unscheduled,
+            "in_flight": max(balance - unscheduled, 0),
+            "shortfall": max(unscheduled - balance, 0),
+        }

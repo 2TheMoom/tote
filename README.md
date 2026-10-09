@@ -61,9 +61,9 @@ recipient type.
 
 ## Live deployment
 Deployed on **GenLayer Bradbury Testnet** (chain ID 4221):
-- **Contract:** [`0xfC0200Fb66906B67869739C22A2Da181C7ac6eaB`](https://explorer-bradbury.genlayer.com/address/0xfC0200Fb66906B67869739C22A2Da181C7ac6eaB)
+- **Contract:** [`0xC8879351B08bD2b0176a025a03a0F11b388e694F`](https://explorer-bradbury.genlayer.com/address/0xC8879351B08bD2b0176a025a03a0F11b388e694F)
 - **Frontend:** [tote-frontend.vercel.app](https://tote-frontend.vercel.app)
-- Verified via 65 passing direct-mode tests (`python -m pytest tests/direct/`),
+- Verified via 62 passing direct-mode tests (`python -m pytest tests/direct/`),
   covering the full lifecycle (open → resolved → finalized, and the
   disputed branch), every validation guard (duplicate/empty-field checks,
   same-marker rejection, the creator-can't-stake rule, the both-pools-must-
@@ -118,58 +118,64 @@ the true text is "no protocol fee applies to payouts"):
   the recipient's on-chain balance afterward, not just the transaction
   result.
 
-### Second steward round: payout reconciliation and dispute-reason floor
-A later steward pass found the `Payee` fix alone insufficient: `claim()`/
-`reclaim_stake()` treated a silent `emit_transfer` as delivery with no way
-back if it failed to land, and `challenge()` accepted any non-empty
-reason, down to a single trivial word, for a dispute that then escalates
-to real LLM adjudication. Fixed by recording every payout attempt in
-`pending_payouts` before firing it - `claimed`/`reclaimed` lock the
-entitlement in once (so it's computed only once), and
-`retry_claim_payout()`/`retry_reclaim_payout()` let a wallet re-attempt
-its own pending delivery - and by adding `MIN_DISPUTE_REASON_LENGTH` (20
-characters) alongside the existing maximum.
+### Payouts are delivered exactly once, by construction
+A steward rejected the previous design because a retry cap "bounds the
+resulting exposure but does not prevent duplicate delivery". That was
+correct, and it applied to every retry variant this repo tried (blind,
+balance-checked, capped). The fix is to remove retry entirely, because
+it was never needed:
 
-### Third steward round: a real fund-safety bug in the retry itself
-This fix was still wrong: `pending_payouts` was never cleared after a
-successful delivery, so a recipient whose payout actually landed could
-call retry again anyway, firing a second real transfer of the same
-amount and consuming GEN owed to other stakers - an unbounded drain, not
-a rare edge case, and the steward caught it correctly. Fixed with a
-`pending_floor` snapshot: the recipient's balance is recorded right
-before the first attempt, and retry now reads the recipient's *current*
-balance and compares it against `floor + amount` - if the payout already
-landed, retry clears `pending_payouts` and refuses instead of re-sending.
-`test_retry_*_blocked_once_balance_confirms_delivery` proves this
-directly (simulates delivery via the direct-mode harness's `deal()`,
-confirms retry refuses and the record is actually cleared, not just
-blocked once). 61 tests pass, lint clean. Redeployed:
-`0xa9465dBb90ab60d1D27Dca893bb024a39Ffa7C31`.
+- **A payment to a wallet only executes when the transaction that emitted
+  it finalizes** (GenLayer docs: external messages "always execute on
+  finalization" and cannot be emitted on acceptance). If that transaction
+  is rejected or overturned, the message is dropped with it.
+- So `claim()` and `reclaim_stake()` record the entitlement in `payouts`
+  and emit the transfer **in the same transaction**. Either both happen
+  or neither does. A rejected claim leaves nothing recorded and nothing
+  sent, and the wallet simply claims again.
+- `payouts` is the single source of truth for "already claimed": a key
+  present there is refused, and there is no code path that emits a second
+  transfer for it. No `retry_*` method exists.
+- The failures previously blamed on the platform fit this model exactly:
+  a payout that "never arrived" was waiting for its transaction to
+  finalize (one landed hours later, on its own), and the other failure
+  mode rejected the whole transaction, so nothing was recorded or sent.
+  Re-sending a payout that was merely slow is what created the
+  duplicate-delivery risk.
 
-A real end-to-end `stake → resolve → finalize → claim` cycle against the
-current address, isolating whether `Payee`'s payout is *reliable* rather
-than merely possible, needs a payable transaction - the bare `genlayer
-write` CLI has no flag for attaching native value to a call at all
-(`--fee-value` is the consensus fee deposit, not the call's value). A
-ready-to-run script (`verify-payee-live.mjs`, `genlayer-js` with real
-`value:`) is included in this repo for whoever holds the deployer key to
-run directly.
+`get_accounting()` reconciles the ledger against the contract's real
+balance, read-only: `unscheduled` (staked, not yet paid, still owed to
+someone), `in_flight` (scheduled, waiting for finality), and `shortfall`.
+`in_flight` returning to 0 means every scheduled payout has landed.
+Nothing in it can trigger a transfer, so a misleading balance can't cause
+a payment. One honest caveat: a read taken seconds after a value-bearing
+transaction can briefly see the new balance before the stored totals
+catch up, overstating `in_flight` for a moment.
 
-### Fourth steward round: the balance check itself was unsound
-The `pending_floor` balance check above was still wrong in both
-directions, not just unbounded: a delayed balance update can make a
-transfer that already landed look undelivered (firing a duplicate), and
-an unrelated balance rise can make a transfer that never landed look
-delivered, silently losing it forever - GenVM exposes no other signal to
-confirm delivery. Removed the balance check entirely; `retry_claim_payout`/
-`retry_reclaim_payout` are now blind, resending up to `MAX_RETRIES` with
-no balance inspection at all. Each retry key is already derived from the
-caller's own address (`{market_id}_{sender}` / `reclaimed_{stake_key}`),
-so a wallet was already structurally unable to retry anyone else's
-payout - this fix only removed the unsound part. `test_retry_*_ignores_
-recipient_balance` and `test_retry_*_by_non_{claimant,staker}_fails` cover
-both properties directly. 65 tests pass, lint clean, 19,789 bytes.
-Redeployed: `0xfC0200Fb66906B67869739C22A2Da181C7ac6eaB`.
+Tests count every transfer the contract actually emits (`EthSend`), not
+just state: one claim emits exactly one transfer of the entitlement, a
+second claim or reclaim emits nothing, two winners are each paid once and
+the pool is conserved (1 wei of integer rounding dust stays in the
+contract), and the accounting views track a payout until it lands.
+Mutation-checked: removing either duplicate check, the payout record,
+either running total, or making `_schedule` pay twice each fails a test.
+
+### Live-verified exactly-once payout (current deployment)
+Market `tote-once-1791545403622`, three dedicated test wallets, real GEN:
+
+| Step | Transaction | Result |
+|---|---|---|
+| `create_market` | `0x63d6d1b1...` | accepted |
+| `stake` YES 0.002 GEN, NO 0.001 GEN | `0xb57e33c9...`, `0x24d7b409...` | accounting: staked 0.003, unscheduled 0.003, in flight 0 |
+| `resolve` against the boilerplate README | `0x1042b9ad...` | outcome `yes` |
+| `finalize` after the 10-minute window | `0xc13807da...` | finalized |
+| `claim` by the YES staker | `0xd2df1257...` | **exactly one** message: 0.003 GEN to the winner, `onAcceptance: false`; accounting: scheduled 0.003, in flight 0.003 |
+| `claim` again | `0x5679608d...` | `FINISHED_WITH_ERROR`, **no messages** |
+| claim transaction finalizes (~30 min after acceptance) | `0xd2df1257...` | `FINALIZED`; on that same poll the contract balance went 0.003 to 0, the winner's balance rose by exactly 0.003 GEN, `in_flight` returned to 0. Delivered once. |
+
+Script: `verify-payee-live.mjs`, then `watch-finality.mjs` for the
+landing. Earlier steward rounds and the abandoned retry designs are in
+the git history.
 
 ## What's included
 - `contracts/tote.py` — the Tote Intelligent Contract

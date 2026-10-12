@@ -5,6 +5,7 @@ import { useWallet } from "@/lib/genlayer/wallet";
 import { GENLAYER_NETWORK } from "@/lib/genlayer/client";
 import { error, userRejected } from "@/lib/utils/toast";
 import { VesicaGlyph } from "./VesicaGlyph";
+import { isMobileUserAgent, metamaskAppLink } from "@/lib/wallet-links";
 
 const METAMASK_INSTALL_URL = "https://metamask.io/download/";
 
@@ -20,7 +21,7 @@ function StepIcon({ path }: { path: string }) {
 
 function CheckMark({ done }: { done: boolean }) {
   return (
-    <svg className="seq-check" viewBox="0 0 20 20" fill="none">
+    <svg className="seq-check" width="20" height="20" viewBox="0 0 20 20" fill="none">
       <circle cx="10" cy="10" r="10" fill={done ? "#1fa37a" : "#34343f"} opacity={done ? 0.15 : 0.4} />
       {done && <path d="M6 10.5l2.5 2.5L14 7.5" stroke="#35c794" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />}
     </svg>
@@ -31,7 +32,7 @@ function SeqRow({ iconPath, k, v, done }: { iconPath: string; k: string; v: stri
   return (
     <div className="flex items-center gap-3">
       <StepIcon path={iconPath} />
-      <div className="flex-1">
+      <div className="flex-1 min-w-0">
         <div className="font-semibold text-[0.78rem] text-foreground">{k}</div>
         <div className="font-mono text-[0.66rem] mt-0.5" style={{ color: done ? "var(--emerald-bright)" : "var(--ink-faint)" }}>{v}</div>
       </div>
@@ -88,6 +89,8 @@ export function AccountPanel() {
     }
   };
 
+  const onMobile = typeof navigator !== "undefined" && isMobileUserAgent(navigator.userAgent);
+  const walletAppLink = typeof window !== "undefined" ? metamaskAppLink(window.location.host, window.location.pathname) : METAMASK_INSTALL_URL;
   const networkLabel = !isConnected ? "Pending" : isOnCorrectNetwork ? GENLAYER_NETWORK.chainName : "Wrong network";
   const shortAddr = address ? `0x${address.slice(2, 6)}…${address.slice(-4)}` : "—";
 
@@ -95,14 +98,14 @@ export function AccountPanel() {
     <div className="relative">
       <button type="button" onClick={() => setIsPanelOpen((v) => !v)} disabled={isLoading} className="wallet-chip">
         <span className="avatar" />
-        {isConnected ? shortAddr : "Connect Wallet"}
+        {isConnected ? shortAddr : (<><span className="sm:hidden">Connect</span><span className="hidden sm:inline">Connect Wallet</span></>)}
       </button>
 
       {isPanelOpen && (
         <>
           <div className="fixed inset-0 z-40" style={{ background: "rgba(4,4,6,0.65)", backdropFilter: "blur(2px)" }} onClick={() => setIsPanelOpen(false)} />
           <div
-            className="fixed left-4 right-4 sm:left-auto sm:right-5 top-[76px] z-50 sm:w-[320px] p-6"
+            className="fixed left-4 right-4 sm:left-auto sm:right-5 top-[76px] z-50 sm:w-[320px] p-6 max-h-[calc(100dvh-96px)] overflow-y-auto"
             style={{
               background: "linear-gradient(180deg, var(--popover), var(--card))",
               border: "1px solid var(--border-hi)",
@@ -130,7 +133,12 @@ export function AccountPanel() {
             </div>
 
             <div className="flex flex-col gap-2.5">
-              {!isMetaMaskInstalled && (
+              {!isMetaMaskInstalled && onMobile && (
+                <a href={walletAppLink} className="btn-tote primary block text-center">
+                  Open in MetaMask
+                </a>
+              )}
+              {!isMetaMaskInstalled && !onMobile && (
                 <button type="button" onClick={() => window.open(METAMASK_INSTALL_URL, "_blank")} className="btn-tote primary block">
                   Install MetaMask
                 </button>

@@ -11,17 +11,22 @@ const NETWORK_SHORT_NAME = GENLAYER_NETWORK.chainName
 
 export function Navbar() {
   return (
-    <header
-      className="flex items-center justify-between gap-4 flex-wrap pb-6 mb-8"
-      style={{ borderBottom: "1px solid var(--border)" }}
-    >
-      <LogoFull size="md" />
-      <div className="flex items-center gap-4">
-        <div className="network-chip">
-          <span className="led" />
-          {NETWORK_SHORT_NAME} &middot; {GENLAYER_CHAIN_ID}
+    <header className="pb-5 mb-6 sm:pb-6 sm:mb-8" style={{ borderBottom: "1px solid var(--border)" }}>
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <LogoFull size="md" />
         </div>
-        <AccountPanel />
+        <div className="flex items-center gap-4 shrink-0">
+          <div className="network-chip hidden sm:flex">
+            <span className="led" />
+            {NETWORK_SHORT_NAME} &middot; {GENLAYER_CHAIN_ID}
+          </div>
+          <AccountPanel />
+        </div>
+      </div>
+      <div className="network-chip mt-3 sm:hidden">
+        <span className="led" />
+        {NETWORK_SHORT_NAME} &middot; {GENLAYER_CHAIN_ID}
       </div>
     </header>
   );

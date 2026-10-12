@@ -7,6 +7,7 @@ import { getContractAddress, getStudioUrl } from "../genlayer/client";
 import { useWallet } from "../genlayer/wallet";
 import { success, error, configError } from "../utils/toast";
 import type { Market } from "../contracts/types";
+import { EMPTY_POSITION, type Position } from "../market-actions";
 
 export function useToteContract(): Tote | null {
   const { address } = useWallet();
@@ -72,12 +73,23 @@ export function useMarketList() {
   return { ...listQuery, isLoading: idsQuery.isLoading || listQuery.isLoading };
 }
 
-export function useHasClaimed(marketId: string, wallet: string | null) {
+/** The connected wallet's stakes, claim and reclaim state in one market. */
+export function useMyPosition(marketId: string, wallet: string | null) {
   const contract = useToteContract();
 
-  return useQuery<boolean, Error>({
-    queryKey: ["hasClaimed", marketId, wallet],
-    queryFn: () => (contract && wallet ? contract.hasClaimed(marketId, wallet) : Promise.resolve(false)),
+  return useQuery<Position, Error>({
+    queryKey: ["position", marketId, wallet],
+    queryFn: async () => {
+      if (!contract || !wallet) return EMPTY_POSITION;
+      const [yesStake, noStake, claimed, reclaimedYes, reclaimedNo] = await Promise.all([
+        contract.getStake(marketId, "yes", wallet),
+        contract.getStake(marketId, "no", wallet),
+        contract.hasClaimed(marketId, wallet),
+        contract.hasReclaimed(marketId, "yes", wallet),
+        contract.hasReclaimed(marketId, "no", wallet),
+      ]);
+      return { yesStake, noStake, claimed, reclaimedYes, reclaimedNo };
+    },
     refetchOnWindowFocus: true,
     staleTime: 2000,
     enabled: !!contract && !!marketId && !!wallet,
@@ -109,7 +121,7 @@ function useWriteAction<TArgs>(
       queryClient.invalidateQueries({ queryKey: ["market", marketId] });
       queryClient.invalidateQueries({ queryKey: ["marketIds"] });
       queryClient.invalidateQueries({ queryKey: ["marketList"] });
-      queryClient.invalidateQueries({ queryKey: ["hasClaimed", marketId] });
+      queryClient.invalidateQueries({ queryKey: ["position", marketId] });
       setIsPending(false);
       success(successMessage.title, { description: successMessage.description });
     },
@@ -198,6 +210,24 @@ export function useClaim() {
     (c, a, fee, cb) => c.claim(a.id, fee, cb),
     { title: "Claimed", description: "Payout recorded." },
     "Failed to claim",
+    (a) => a.id
+  );
+}
+
+export function useResolveStaleDispute() {
+  return useWriteAction<{ id: string }>(
+    (c, a, fee, cb) => c.resolveStaleDispute(a.id, fee, cb),
+    { title: "Market settled", description: "The stuck dispute was settled at the original outcome." },
+    "Failed to settle the stuck dispute",
+    (a) => a.id
+  );
+}
+
+export function useReclaimStake() {
+  return useWriteAction<{ id: string; side: "yes" | "no" }>(
+    (c, a, fee, cb) => c.reclaimStake(a.id, a.side, fee, cb),
+    { title: "Stake returned", description: "Your original stake is on its way back." },
+    "Failed to reclaim the stake",
     (a) => a.id
   );
 }

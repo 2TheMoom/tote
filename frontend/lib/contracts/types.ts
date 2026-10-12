@@ -2,7 +2,7 @@
  * TypeScript types for the GenLayer Tote contract
  */
 
-export type MarketStatus = "open" | "resolved" | "disputed" | "finalized";
+export type MarketStatus = "open" | "resolved" | "disputed" | "finalized" | "abandoned";
 export type MarketOutcome = "" | "yes" | "no";
 
 export interface Market {

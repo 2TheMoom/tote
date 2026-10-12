@@ -35,12 +35,19 @@ the window with no dispute; `claim(market_id)` then pays out real
 pari-mutuel shares - a winning staker's payout is their fraction of the
 winning pool, multiplied across the full combined pool, no protocol fee.
 
-A market that can never reach a terminal state on its own - one side
-never gets a stake, the verification source never yields exactly one
-marker, or a dispute can't reach validator consensus - doesn't lock
-stakes forever: `reclaim_stake(market_id, side)` lets any staker recover
-their own original stake once a 24-hour recovery window has passed with
-no resolution.
+A market that can never reach a terminal state on its own doesn't lock
+stakes forever, and the two stuck cases are handled differently:
+
+- **Stuck open** (one side never gets a stake, or the verification source
+  never yields exactly one marker): `reclaim_stake(market_id, side)` lets
+  any staker take back their own original stake once 24 hours have passed
+  since `resolve_after`.
+- **Stuck dispute** (adjudication can't reach validator consensus):
+  `resolve_stale_dispute(market_id)` is permissionless. Once 24 hours have
+  passed since `challenge_deadline` it settles the market at the original,
+  already-verified outcome. It is not a refund, and `reclaim_stake`
+  deliberately refuses a disputed market, so a losing staker can't dispute
+  a correct outcome and win by outlasting adjudication.
 
 **Payouts and refunds go through `gl.evm.contract_interface` (`Payee`),
 not `gl.get_contract_at()`.** Stakers are EOAs (plain wallets), and
@@ -71,8 +78,9 @@ Deployed on **GenLayer Bradbury Testnet** (chain ID 4221):
   neither (or both) markers are found, the challenge-window boundary, both
   dispute verdicts (uphold and overturn - including the outcome flip),
   real pari-mutuel payout accounting, `reclaim_stake`'s recovery paths
-  (stuck-open, stuck-disputed, too-early, double-reclaim, independent
-  stakers reclaiming separately), a failed/unreachable adjudication
+  (stuck-open, too-early, double-reclaim, independent stakers reclaiming
+  separately, refusing a stuck dispute), `resolve_stale_dispute` (settles
+  at the pre-dispute outcome, too-early, wrong status), a failed/unreachable adjudication
   reverting cleanly instead of defaulting to either verdict, and the
   dispute prompt genuinely wrapping untrusted input in isolating tags
   (verified by requiring those tags in the mock match pattern itself, not
@@ -273,11 +281,16 @@ The app will be available at http://localhost:3000/.
    passes with no dispute.
 7. **`claim(market_id)`** — a winning staker claims their pari-mutuel
    share: `payout = (my_stake / winning_pool) * (yes_pool + no_pool)`.
-8. **`reclaim_stake(market_id, side)`** — permissionless recovery for a
-   market stuck 24 hours past `resolve_after` and still `open`, or past
-   `challenge_deadline` and still `disputed`: any staker gets back their
-   own original stake, not a payout.
-9. **`get_market`** / **`get_all_market_ids`** / **`get_stake`** /
+8. **`reclaim_stake(market_id, side)`**: recovery for a market stuck
+   24 hours past `resolve_after` and still `open` (or already marked
+   `abandoned` by an earlier reclaim). Any staker gets back their own
+   original stake on that side, not a payout. It refuses a disputed
+   market; see the next item.
+9. **`resolve_stale_dispute(market_id)`**: permissionless recovery for a
+   dispute stuck 24 hours past `challenge_deadline`. It settles the market
+   at the original, already-verified outcome (not a refund), after which
+   winners `claim()` as usual.
+10. **`get_market`** / **`get_all_market_ids`** / **`get_stake`** /
    **`has_claimed`** / **`has_reclaimed`** / **`get_yes_stakers`** /
    **`get_no_stakers`** — read back a market's full state, its stakers,
    and a wallet's position.
@@ -288,6 +301,7 @@ The app will be available at http://localhost:3000/.
 |-----------|---------|-------|-----------------|
 | **Lint** | `genvm-lint check contracts/tote.py` | ~250ms | No |
 | **Direct** | `python -m pytest tests/direct/ -v` | ~ms/test | No |
+| **Frontend logic** | `cd frontend && npm test` | ~ms/test | No |
 
 ## Community
 - **[Discord](https://discord.gg/8Jm4v89VAu)**: Discussions, support, and announcements

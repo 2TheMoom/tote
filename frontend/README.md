@@ -69,6 +69,11 @@ generic modal.
   outcome within a 10-minute window; validators weigh the dispute against
   the live content via reasoned judgment only when genuinely escalated
 - **Finalize / Claim**: close the challenge window, then claim a real
-  pari-mutuel share of the pool
+  pari-mutuel share of the pool. Claim shows only for a wallet with a
+  winning stake that has not claimed, and Challenge only for a staker in
+  that market, matching the contract.
+- **Recover stuck markets**: after 24 hours, a staker can take back their
+  own stake from a market stuck open, and any connected account can settle
+  a stuck dispute at its original outcome (not a refund).
 - **Market board**: every market on the contract, with a live pool-split
   proportion bar for each

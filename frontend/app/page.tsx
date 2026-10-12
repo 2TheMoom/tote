@@ -7,7 +7,7 @@ import { useWallet } from "@/lib/genlayer/wallet";
 import {
   useMarket,
   useMarketList,
-  useHasClaimed,
+  useMyPosition,
   useCreateMarket,
   useStake,
   useResolve,
@@ -15,6 +15,8 @@ import {
   useResolveDispute,
   useFinalize,
   useClaim,
+  useReclaimStake,
+  useResolveStaleDispute,
 } from "@/lib/hooks/useTote";
 import {
   Dialog,
@@ -27,6 +29,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { Market } from "@/lib/contracts/types";
+import { availableActions, challengeOpen as isChallengeOpen, recoveryNote } from "@/lib/market-actions";
 
 function shortAddr(hex: string): string {
   if (!hex) return "—";
@@ -100,6 +103,7 @@ function statusLabel(m: Market, now: number): string {
     }
     case "disputed": return "Disputed · Awaiting resolution";
     case "finalized": return `Finalized: ${m.outcome?.toUpperCase()}`;
+    case "abandoned": return "Abandoned · Stakes returned to stakers";
     default: return m.status;
   }
 }
@@ -257,9 +261,11 @@ function MarketHero({ id }: { id: string }) {
   const now = useNow();
   const resolveAction = useResolve();
   const resolveDisputeAction = useResolveDispute();
+  const staleDisputeAction = useResolveStaleDispute();
   const finalizeAction = useFinalize();
   const claimAction = useClaim();
-  const { data: hasClaimed } = useHasClaimed(id, address);
+  const reclaimAction = useReclaimStake();
+  const { data: position } = useMyPosition(id, address ?? null);
 
   if (isLoading) {
     return <div className="p-8 text-center font-mono text-sm text-ink-faint">Loading market…</div>;
@@ -274,10 +280,9 @@ function MarketHero({ id }: { id: string }) {
   const resolveAfter = Number(m.resolve_after);
   const challengeDeadline = Number(m.challenge_deadline);
   const stakingOpen = m.status === "open" && now < lockTime;
-  const readyToResolve = m.status === "open" && now >= resolveAfter && Number(m.total_yes_pool) > 0 && Number(m.total_no_pool) > 0;
-  const challengeOpen = m.status === "resolved" && now < challengeDeadline;
-  const readyToFinalize = m.status === "resolved" && now >= challengeDeadline;
-  const canClaim = m.status === "finalized" && address && !hasClaimed;
+  const challengeOpen = isChallengeOpen(m, now);
+  const actions = availableActions(m, { address, now, position });
+  const note = recoveryNote(m, now);
 
   return (
     <div
@@ -330,31 +335,53 @@ function MarketHero({ id }: { id: string }) {
       </div>
 
       <div className="flex gap-3 flex-wrap mt-7 pt-6" style={{ borderTop: "1px solid var(--border)" }}>
-        {stakingOpen && !isCreator && (<><StakeDialog marketId={id} side="yes" /><StakeDialog marketId={id} side="no" /></>)}
+        {actions.includes("stake") && (<><StakeDialog marketId={id} side="yes" /><StakeDialog marketId={id} side="no" /></>)}
         {stakingOpen && isCreator && <span className="font-mono text-xs self-center text-ink-faint">You created this market and can&apos;t stake on it.</span>}
-        {readyToResolve && (
+        {actions.includes("resolve") && (
           <button className="btn-tote primary" disabled={resolveAction.isPending} onClick={() => resolveAction.run({ id })}>
             {resolveAction.isPending ? "Resolving…" : "Resolve Market"}
           </button>
         )}
-        {challengeOpen && <ChallengeDialog marketId={id} />}
-        {readyToFinalize && (
+        {actions.includes("challenge") && <ChallengeDialog marketId={id} />}
+        {actions.includes("finalize") && (
           <button className="btn-tote primary" disabled={finalizeAction.isPending} onClick={() => finalizeAction.run({ id })}>
             {finalizeAction.isPending ? "Finalizing…" : "Finalize Market"}
           </button>
         )}
-        {m.status === "disputed" && (
+        {actions.includes("resolve_dispute") && (
           <button className="btn-tote ghost" disabled={resolveDisputeAction.isPending} onClick={() => resolveDisputeAction.run({ id })}>
             {resolveDisputeAction.isPending ? "Resolving…" : "Resolve Dispute"}
           </button>
         )}
-        {canClaim && (
+        {actions.includes("resolve_stale_dispute") && (
+          <button className="btn-tote ghost danger" disabled={staleDisputeAction.isPending} onClick={() => staleDisputeAction.run({ id })}>
+            {staleDisputeAction.isPending ? "Settling…" : "Settle Stuck Dispute"}
+          </button>
+        )}
+        {actions.includes("claim") && (
           <button className="btn-tote primary" disabled={claimAction.isPending} onClick={() => claimAction.run({ id })}>
             {claimAction.isPending ? "Claiming…" : "Claim Winnings"}
           </button>
         )}
+        {actions.includes("reclaim_yes") && (
+          <button className="btn-tote ghost danger" disabled={reclaimAction.isPending} onClick={() => reclaimAction.run({ id, side: "yes" })}>
+            {reclaimAction.isPending ? "Reclaiming…" : "Take Back Yes Stake"}
+          </button>
+        )}
+        {actions.includes("reclaim_no") && (
+          <button className="btn-tote ghost danger" disabled={reclaimAction.isPending} onClick={() => reclaimAction.run({ id, side: "no" })}>
+            {reclaimAction.isPending ? "Reclaiming…" : "Take Back No Stake"}
+          </button>
+        )}
         {!address && <span className="font-mono text-xs self-center text-ink-faint">Connect your wallet above to act on this market.</span>}
       </div>
+
+      {note && (
+        <div className="mt-4 flex items-start gap-2 font-mono text-xs" style={{ color: "var(--burgundy-bright)" }}>
+          <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--burgundy-bright)", marginTop: 5 }} />
+          {note}
+        </div>
+      )}
     </div>
   );
 }

@@ -117,12 +117,12 @@ class Tote {
     return Array.isArray(result) ? result.map(String) : [];
   }
 
-  /** The newest ids first, up to `limit`, so a long history never has to be loaded. */
+  /** The newest `limit` ids, oldest first within that page, read from the end so a long history never has to be loaded. */
   async getRecentMarketIds(limit = 20): Promise<string[]> {
     const count = await this.getMarketCount();
     if (count === 0) return [];
     const start = Math.max(0, count - limit);
-    return (await this.getMarketIds(start, count - start)).reverse();
+    return this.getMarketIds(start, count - start);
   }
 
   async getStake(marketId: string, side: "yes" | "no", wallet: string): Promise<bigint> {

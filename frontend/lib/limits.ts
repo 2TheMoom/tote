@@ -47,3 +47,12 @@ export function requiredBond(totalStakedWei: bigint): bigint {
   const b = (totalStakedWei * BigInt(BOND_BPS)) / BigInt(10000);
   return b > BigInt(1) ? b : BigInt(1);
 }
+
+/** GEN amount for display. Small amounts keep their precision: a bond on a 0.002 GEN escrow is 0.0002, never "0.000". */
+export function formatGen(wei: string): string {
+  const n = Number(wei) / 1e18;
+  if (!Number.isFinite(n) || n === 0) return "0.000";
+  const text = n >= 1 ? n.toFixed(3) : n.toFixed(9).replace(/0+$/, "");
+  const [whole, frac = ""] = text.split(".");
+  return `${whole}.${frac.padEnd(3, "0")}`;
+}

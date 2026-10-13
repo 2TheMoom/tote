@@ -31,7 +31,7 @@ import { Label } from "@/components/ui/label";
 import type { Market } from "@/lib/contracts/types";
 import { availableActions, bondFor, challengeDeadline, challengeOpen as isChallengeOpen, disputeStaleAt, recoveryNote } from "@/lib/market-actions";
 import { getTxExplorerUrl } from "@/lib/genlayer/chains";
-import { MIN_STALE, MIN_WINDOW, markerProblem, normalizeLine, urlProblem } from "@/lib/limits";
+import { formatGen, MIN_STALE, MIN_WINDOW, markerProblem, normalizeLine, urlProblem } from "@/lib/limits";
 import type { WriteProgress } from "@/lib/hooks/useTote";
 
 const WINDOW_CHOICES = [
@@ -66,12 +66,6 @@ function shortAddr(hex: string): string {
 function sameAddr(a: string | null | undefined, b: string | null | undefined): boolean {
   if (!a || !b) return false;
   return a.toLowerCase() === b.toLowerCase();
-}
-
-function formatGen(wei: string): string {
-  const n = Number(wei) / 1e18;
-  if (!Number.isFinite(n)) return "0.000";
-  return n.toFixed(3);
 }
 
 function genToWei(input: string): bigint {

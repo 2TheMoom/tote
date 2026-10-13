@@ -342,7 +342,7 @@ class Tote(gl.Contract):
 
     @gl.public.write
     def resolve_dispute(self, market_id: str) -> None:
-        """uphold: bond goes to the winners. overturn: outcome flips, bond returned. Unclear: nothing changes."""
+        """uphold: bond goes to the winners. overturn: outcome flips (claim_bond returns the bond). Unclear: nothing changes."""
         m = self._get(market_id)
         _bad(m.status != "disputed", f"Not under dispute (status: {m.status})")
         r = self._judge(m)
@@ -353,7 +353,13 @@ class Tote(gl.Contract):
             m.bonus = m.bond
         else:
             m.outcome = "no" if m.outcome == "yes" else "yes"
-            self._schedule(f"bond_{market_id}", m.challenger, int(m.bond))
+
+    @gl.public.write
+    def claim_bond(self, market_id: str) -> None:
+        """After an overturn, anyone can send the bond back to the challenger. Kept out of resolve_dispute so no transfer shares a transaction with the model call."""
+        m = self._get(market_id)
+        _bad(m.status != "finalized" or m.bond == 0 or m.bonus != 0, "No bond to return")
+        self._schedule(f"bond_{market_id}", m.challenger, int(m.bond))
 
     @gl.public.write
     def finalize(self, market_id: str) -> None:
@@ -403,7 +409,7 @@ class Tote(gl.Contract):
             "yes_marker": m.yes_marker, "no_marker": m.no_marker, "lock_time": m.lock_time, "resolve_after": m.resolve_after,
             "challenge_window": m.challenge_window, "stale_after": m.stale_after, "status": m.status, "outcome": m.outcome,
             "resolved_at": m.resolved_at, "disputed_at": m.disputed_at, "bond": m.bond,
-            "bonus": m.bonus, "evidence_excerpt": m.evidence_excerpt, "evidence_digest": m.evidence_digest,
+            "bonus": m.bonus, "bond_refunded": f"bond_{market_id}" in self.payouts, "challenger": m.challenger.as_hex, "evidence_excerpt": m.evidence_excerpt, "evidence_digest": m.evidence_digest,
             "dispute_reason": m.dispute_reason, "resolution_note": m.resolution_note,
             "total_yes_pool": m.total_yes_pool, "total_no_pool": m.total_no_pool,
         }

@@ -2,6 +2,8 @@
 
 import hashlib
 import json
+
+import pytest
 from datetime import datetime, timezone
 
 CONTRACT = "contracts/tote.py"
@@ -468,7 +470,7 @@ def test_uphold_keeps_outcome_and_bond_goes_to_winners(direct_vm, direct_deploy,
     assert sends == [(_hex(direct_bob), 1050)]  # 600 stake of 600 winning pool: the whole 1000 pool plus the 50 bond
 
 
-def test_overturn_flips_outcome_and_returns_bond(direct_vm, direct_deploy, direct_alice, direct_bob, direct_charlie):
+def test_overturn_flips_outcome_and_claim_bond_returns_the_bond(direct_vm, direct_deploy, direct_alice, direct_bob, direct_charlie, direct_owner):
     c = direct_deploy(CONTRACT)
     sends = _capture_sends(direct_vm)
     direct_vm.warp(T0)
@@ -477,7 +479,13 @@ def test_overturn_flips_outcome_and_returns_bond(direct_vm, direct_deploy, direc
     c.resolve_dispute("m-1")
     m = c.get_market("m-1")
     assert m["status"] == "finalized" and m["outcome"] == "no" and m["bonus"] == 0
-    assert sends == [(_hex(direct_charlie), 50)]  # the challenger's bond comes back at once
+    assert sends == [] and m["bond_refunded"] is False  # the transaction that runs the model moves no money
+    direct_vm.sender = direct_owner  # permissionless, and it always pays the challenger
+    c.claim_bond("m-1")
+    assert sends == [(_hex(direct_charlie), 50)]
+    assert c.get_market("m-1")["bond_refunded"] is True
+    with direct_vm.expect_revert("Already paid"):
+        c.claim_bond("m-1")
     direct_vm.sender = direct_charlie
     c.claim("m-1")
     assert sends[1] == (_hex(direct_charlie), 1000)
@@ -748,12 +756,53 @@ def test_settled_market_cannot_be_paid_twice_by_any_path(direct_vm, direct_deplo
     c.resolve_dispute("m-1")
     direct_vm.warp("2026-03-01T00:00:00Z")
     direct_vm.sender = direct_charlie
+    c.claim_bond("m-1")
     c.claim("m-1")
-    for call in (lambda: c.claim("m-1"), lambda: c.resolve_dispute("m-1"), lambda: c.resolve_stale_dispute("m-1"),
+    for call in (lambda: c.claim("m-1"), lambda: c.claim_bond("m-1"), lambda: c.resolve_dispute("m-1"), lambda: c.resolve_stale_dispute("m-1"),
                  lambda: c.finalize("m-1"), lambda: c.resolve("m-1"), lambda: c.reclaim_stake("m-1", "no")):
         with direct_vm.expect_revert():
             call()
     assert sends == [(_hex(direct_charlie), 50), (_hex(direct_charlie), 1000)]
+
+
+@pytest.mark.parametrize("verdict", ["uphold", "overturn"])
+def test_resolve_dispute_never_moves_money_whatever_the_verdict(verdict, direct_vm, direct_deploy, direct_alice, direct_bob, direct_charlie):
+    """No transfer may share a transaction with the model call: a leader rotation can leave a rotated-out leader's messages behind."""
+    c = direct_deploy(CONTRACT)
+    sends = _capture_sends(direct_vm)
+    direct_vm.warp(T0)
+    _disputed(direct_vm, c, direct_alice, direct_bob, direct_charlie)
+    _judge(direct_vm, verdict)
+    c.resolve_dispute("m-1")
+    assert sends == []
+
+
+def test_claim_bond_is_refused_unless_the_outcome_was_overturned(direct_vm, direct_deploy, direct_alice, direct_bob, direct_charlie):
+    c = direct_deploy(CONTRACT)
+    sends = _capture_sends(direct_vm)
+    direct_vm.warp(T0)
+    _resolved(direct_vm, c, direct_alice, direct_bob, direct_charlie, mid="plain")
+    for mid in ("stale", "upheld", "over"):
+        direct_vm.warp(T0)  # staking must be open to build each market
+        _disputed(direct_vm, c, direct_alice, direct_bob, direct_charlie, mid=mid)
+    direct_vm.sender = direct_charlie
+    for mid in ("plain", "stale", "upheld", "over"):  # nothing finalized yet, or no bond at all
+        with direct_vm.expect_revert("No bond to return"):
+            c.claim_bond(mid)
+    direct_vm.warp(AFTER_STALE)
+    c.finalize("plain")  # finalized, but never disputed: there is no bond to return
+    with direct_vm.expect_revert("No bond to return"):
+        c.claim_bond("plain")
+    c.resolve_stale_dispute("stale")  # the committed outcome stands, the bond goes to the winners
+    _judge(direct_vm, "uphold")
+    c.resolve_dispute("upheld")
+    for mid in ("stale", "upheld"):
+        with direct_vm.expect_revert("No bond to return"):
+            c.claim_bond(mid)
+    _judge(direct_vm, "overturn")
+    c.resolve_dispute("over")
+    c.claim_bond("over")
+    assert sends == [(_hex(direct_charlie), 50)]
 
 
 def test_accounting_tracks_a_payout_until_it_lands(direct_vm, direct_deploy, direct_alice, direct_bob, direct_charlie):

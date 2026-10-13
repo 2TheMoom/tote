@@ -1,0 +1,715 @@
+{
+ "contract": "0x077a8e55222C8DC7Dd27dE64305FCDDEfe2A0a50",
+ "run": "mv6tpw81",
+ "started": "2026-10-13T15:16:16.725Z",
+ "events": [
+  {
+   "t": "2026-10-13T15:16:31.532Z",
+   "scenario": "misleading",
+   "msg": "create_market 0x95519f5b4c exec=FINISHED_WITH_RETURN result=AGREE",
+   "fn": "create_market",
+   "hash": "0x95519f5b4cbfeb0190371890ee7e57c8a804575e0fdf387ebd0d041faa246775",
+   "exec": "FINISHED_WITH_RETURN"
+  },
+  {
+   "t": "2026-10-13T15:16:50.068Z",
+   "scenario": "claim",
+   "msg": "create_market 0x19f1db747d exec=FINISHED_WITH_RETURN result=AGREE",
+   "fn": "create_market",
+   "hash": "0x19f1db747dc43e15c24d3ac272cd875f7bea8cf5eac5366f92a3042a29fa76ec",
+   "exec": "FINISHED_WITH_RETURN"
+  },
+  {
+   "t": "2026-10-13T15:17:03.046Z",
+   "scenario": "misleading",
+   "msg": "stake 0x562db45f5d exec=FINISHED_WITH_RETURN result=AGREE",
+   "fn": "stake",
+   "hash": "0x562db45f5dedf8f2b440a5815dcac5c05a90ddff0c9b4d24101d6c91f270c9fa",
+   "exec": "FINISHED_WITH_RETURN"
+  },
+  {
+   "t": "2026-10-13T15:17:14.066Z",
+   "scenario": "uphold",
+   "msg": "create_market 0x3ec0eb95cc exec=FINISHED_WITH_RETURN result=AGREE",
+   "fn": "create_market",
+   "hash": "0x3ec0eb95cc6a5d2ac92147f8e8d375df8e49db1c0cba23705b3a36ee952ab668",
+   "exec": "FINISHED_WITH_RETURN"
+  },
+  {
+   "t": "2026-10-13T15:17:27.021Z",
+   "scenario": "claim",
+   "msg": "stake 0xd45d32023a exec=FINISHED_WITH_RETURN result=AGREE",
+   "fn": "stake",
+   "hash": "0xd45d32023a0785382a831b221e8883b5ab69345188b8ebcf0bd6b6325d1d14c8",
+   "exec": "FINISHED_WITH_RETURN"
+  },
+  {
+   "t": "2026-10-13T15:17:39.269Z",
+   "scenario": "misleading",
+   "msg": "stake 0xe205115056 exec=FINISHED_WITH_RETURN result=AGREE",
+   "fn": "stake",
+   "hash": "0xe2051150566b52c1dc6bc4690ca0b894eb609372162e0926aea2ee76db15bc26",
+   "exec": "FINISHED_WITH_RETURN"
+  },
+  {
+   "t": "2026-10-13T15:17:40.613Z",
+   "scenario": "misleading",
+   "msg": "waiting 26 min for resolve_after for both.txt"
+  },
+  {
+   "t": "2026-10-13T15:17:49.361Z",
+   "scenario": "overturn",
+   "msg": "create_market 0xbe36dac551 exec=FINISHED_WITH_RETURN result=AGREE",
+   "fn": "create_market",
+   "hash": "0xbe36dac5514f0a6c8d5a36525fc08735513511dbc122d621e60611aac4e68453",
+   "exec": "FINISHED_WITH_RETURN"
+  },
+  {
+   "t": "2026-10-13T15:18:03.864Z",
+   "scenario": "uphold",
+   "msg": "stake 0xbf75fb79f4 exec=FINISHED_WITH_RETURN result=AGREE",
+   "fn": "stake",
+   "hash": "0xbf75fb79f44c34d4a8c8cc50190262df20132e06f8fb2613c805a41488072fa9",
+   "exec": "FINISHED_WITH_RETURN"
+  },
+  {
+   "t": "2026-10-13T15:18:15.051Z",
+   "scenario": "claim",
+   "msg": "stake 0xd4c456adbb exec=FINISHED_WITH_RETURN result=AGREE",
+   "fn": "stake",
+   "hash": "0xd4c456adbb1eddb7eb7e51847ca8f31e0695114b4b956154716c26b1d8a6909f",
+   "exec": "FINISHED_WITH_RETURN"
+  },
+  {
+   "t": "2026-10-13T15:18:16.612Z",
+   "scenario": "claim",
+   "msg": "waiting 25 min for resolve_after"
+  },
+  {
+   "t": "2026-10-13T15:18:25.326Z",
+   "scenario": "stale",
+   "msg": "create_market 0x47a96a048c exec=FINISHED_WITH_RETURN result=AGREE",
+   "fn": "create_market",
+   "hash": "0x47a96a048c2d2c4d6ddab1403eb8b69626875e5376ec96c63361d7a26785ed9c",
+   "exec": "FINISHED_WITH_RETURN"
+  },
+  {
+   "t": "2026-10-13T15:18:41.506Z",
+   "scenario": "overturn",
+   "msg": "stake 0x1955b478aa exec=FINISHED_WITH_RETURN result=AGREE",
+   "fn": "stake",
+   "hash": "0x1955b478aaaa63b08f0e26187b06169b108d441f8cf6e57964abe4d6ada9ab5d",
+   "exec": "FINISHED_WITH_RETURN"
+  },
+  {
+   "t": "2026-10-13T15:18:52.276Z",
+   "scenario": "uphold",
+   "msg": "stake 0x27508cfd73 exec=FINISHED_WITH_RETURN result=AGREE",
+   "fn": "stake",
+   "hash": "0x27508cfd73cbdfcfbf42a89af5c68f9b068f760712261ae52bef3764f1518ff1",
+   "exec": "FINISHED_WITH_RETURN"
+  },
+  {
+   "t": "2026-10-13T15:18:53.795Z",
+   "scenario": "uphold",
+   "msg": "waiting 24 min for resolve_after"
+  },
+  {
+   "t": "2026-10-13T15:19:01.878Z",
+   "scenario": "changed",
+   "msg": "create_market 0x87dcc08f1a exec=FINISHED_WITH_RETURN result=AGREE",
+   "fn": "create_market",
+   "hash": "0x87dcc08f1ae12e903f38ac05a5f7b6e04d7a5eaae73ae9aef200f5982c671927",
+   "exec": "FINISHED_WITH_RETURN"
+  },
+  {
+   "t": "2026-10-13T15:19:13.871Z",
+   "scenario": "stale",
+   "msg": "stake 0x6f840483bc exec=FINISHED_WITH_RETURN result=AGREE",
+   "fn": "stake",
+   "hash": "0x6f840483bce33364ec1d5a7c1eaef13bcce374b1f7709125f25c61bb924a1a48",
+   "exec": "FINISHED_WITH_RETURN"
+  },
+  {
+   "t": "2026-10-13T15:19:29.891Z",
+   "scenario": "overturn",
+   "msg": "stake 0x1f2742b2f6 exec=FINISHED_WITH_RETURN result=AGREE",
+   "fn": "stake",
+   "hash": "0x1f2742b2f6cb98e342a8bad8e1fb6e43328e1fae52971907bc7b5e8312d0652c",
+   "exec": "FINISHED_WITH_RETURN"
+  },
+  {
+   "t": "2026-10-13T15:19:31.183Z",
+   "scenario": "overturn",
+   "msg": "waiting 24 min for resolve_after"
+  },
+  {
+   "t": "2026-10-13T15:19:43.979Z",
+   "scenario": "changed",
+   "msg": "stake 0x075520590f exec=FINISHED_WITH_RETURN result=AGREE",
+   "fn": "stake",
+   "hash": "0x075520590f62caab5c71d0aa817803d8ac2c123446797e4571c2bfe7d567e519",
+   "exec": "FINISHED_WITH_RETURN"
+  },
+  {
+   "t": "2026-10-13T15:19:53.711Z",
+   "scenario": "stale",
+   "msg": "stake 0xa920b7309e exec=FINISHED_WITH_RETURN result=AGREE",
+   "fn": "stake",
+   "hash": "0xa920b7309e98cd7e1305f00ab653254083991d151c08e62f701a1f34c10ea11a",
+   "exec": "FINISHED_WITH_RETURN"
+  },
+  {
+   "t": "2026-10-13T15:19:55.068Z",
+   "scenario": "stale",
+   "msg": "waiting 23 min for resolve_after"
+  },
+  {
+   "t": "2026-10-13T15:20:07.310Z",
+   "scenario": "changed",
+   "msg": "stake 0x228d73a131 exec=FINISHED_WITH_RETURN result=AGREE",
+   "fn": "stake",
+   "hash": "0x228d73a131282f36be38058d43d9ad55fcb71171659424c61e9f399b53eb115d",
+   "exec": "FINISHED_WITH_RETURN"
+  },
+  {
+   "t": "2026-10-13T15:20:08.640Z",
+   "scenario": "changed",
+   "msg": "waiting 23 min for resolve_after"
+  },
+  {
+   "t": "2026-10-13T15:43:13.671Z",
+   "scenario": "stale",
+   "msg": "resolve 0x6eb524ae2c exec=FINISHED_WITH_RETURN result=AGREE",
+   "fn": "resolve",
+   "hash": "0x6eb524ae2c9860b6a0e7e547f7b0690ecf7f28b279ca724c1cc941f10658c58e",
+   "exec": "FINISHED_WITH_RETURN"
+  },
+  {
+   "t": "2026-10-13T15:43:14.959Z",
+   "scenario": "stale",
+   "msg": "resolved YES, committed excerpt \"btc daily summary | btc daily close was above 90000 usd | source: example price feed\" digest f18e3e50ce3a9387",
+   "excerpt": "btc daily summary | btc daily close was above 90000 usd | source: example price feed",
+   "digest": "f18e3e50ce3a9387d4770271025267788e15ad4907414152c520c3e51da9ae23"
+  },
+  {
+   "t": "2026-10-13T15:43:37.162Z",
+   "scenario": "overturn",
+   "msg": "resolve 0xd0510d38ca exec=FINISHED_WITH_RETURN result=AGREE",
+   "fn": "resolve",
+   "hash": "0xd0510d38ca2a871b1dfec52a145739b115c68fb61838582dc48eefbfddc5f85d",
+   "exec": "FINISHED_WITH_RETURN"
+  },
+  {
+   "t": "2026-10-13T15:43:38.461Z",
+   "scenario": "overturn",
+   "msg": "resolved YES, committed excerpt \"btc daily summary | btc daily close was above 90000 usd | correction: the figure above was a typo, the verified close was 89500 usd\" digest a0521e16b61bde75",
+   "excerpt": "btc daily summary | btc daily close was above 90000 usd | correction: the figure above was a typo, the verified close was 89500 usd",
+   "digest": "a0521e16b61bde75ce99f4fe4613623d214b7293f7389ee9908af229009f0267"
+  },
+  {
+   "t": "2026-10-13T15:43:48.373Z",
+   "scenario": "stale",
+   "msg": "challenge 0xfaae8f9ae0 exec=FINISHED_WITH_RETURN result=AGREE",
+   "fn": "challenge",
+   "hash": "0xfaae8f9ae07db8ed07956c1701368c729880f7cf40aa2a0e66c8582fddafdb85",
+   "exec": "FINISHED_WITH_RETURN"
+  },
+  {
+   "t": "2026-10-13T15:44:04.576Z",
+   "scenario": "claim",
+   "msg": "resolve 0xc7760c0273 exec=FINISHED_WITH_RETURN result=AGREE",
+   "fn": "resolve",
+   "hash": "0xc7760c02736a9f5aef7278c3491c64f658700205097e627e5630909d4f93988b",
+   "exec": "FINISHED_WITH_RETURN"
+  },
+  {
+   "t": "2026-10-13T15:44:06.292Z",
+   "scenario": "claim",
+   "msg": "resolved YES, committed excerpt \"btc daily summary | btc daily close was above 90000 usd | source: example price feed\" digest f18e3e50ce3a9387",
+   "excerpt": "btc daily summary | btc daily close was above 90000 usd | source: example price feed",
+   "digest": "f18e3e50ce3a9387d4770271025267788e15ad4907414152c520c3e51da9ae23"
+  },
+  {
+   "t": "2026-10-13T15:44:20.835Z",
+   "scenario": "overturn",
+   "msg": "challenge 0x737bb2e6c4 exec=FINISHED_WITH_RETURN result=AGREE",
+   "fn": "challenge",
+   "hash": "0x737bb2e6c43d14685bc987f6a410be0bba995b47effa482f526f33800e7635bf",
+   "exec": "FINISHED_WITH_RETURN"
+  },
+  {
+   "t": "2026-10-13T15:44:40.005Z",
+   "scenario": "misleading",
+   "msg": "resolve 0xf091fe2ab4 exec=FINISHED_WITH_ERROR result=AGREE",
+   "fn": "resolve",
+   "hash": "0xf091fe2ab46f6376f0860cdd244d850b6d16c03b34ae00877cda65c4fe3cbbcb",
+   "exec": "FINISHED_WITH_ERROR"
+  },
+  {
+   "t": "2026-10-13T15:44:55.742Z",
+   "scenario": "changed",
+   "msg": "resolve 0x7a010e6f30 exec=FINISHED_WITH_RETURN result=AGREE",
+   "fn": "resolve",
+   "hash": "0x7a010e6f30dbc19b54fea8687adc7436647b119f30a6b9e7302d81eee8b3457a",
+   "exec": "FINISHED_WITH_RETURN"
+  },
+  {
+   "t": "2026-10-13T15:45:01.395Z",
+   "scenario": "misleading",
+   "msg": "both outcomes on the page: resolve exec=FINISHED_WITH_ERROR, status after = open, evidence recorded = \"\""
+  },
+  {
+   "t": "2026-10-13T15:45:01.395Z",
+   "scenario": "misleading",
+   "msg": "waiting 118 min for stale_after, so stakers can reclaim"
+  },
+  {
+   "t": "2026-10-13T15:45:09.013Z",
+   "scenario": "changed",
+   "msg": "resolved YES, committed excerpt \"btc daily summary | btc daily close was above 90000 usd | source: example price feed\" digest f18e3e50ce3a9387",
+   "excerpt": "btc daily summary | btc daily close was above 90000 usd | source: example price feed",
+   "digest": "f18e3e50ce3a9387d4770271025267788e15ad4907414152c520c3e51da9ae23"
+  },
+  {
+   "t": "2026-10-13T15:45:13.422Z",
+   "scenario": "changed",
+   "msg": "page edited and pushed (exit 0); waiting for the raw cache to expire"
+  },
+  {
+   "t": "2026-10-13T15:46:28.821Z",
+   "scenario": "uphold",
+   "msg": "resolve 0x185d444a71 exec=FINISHED_WITH_RETURN result=AGREE",
+   "fn": "resolve",
+   "hash": "0x185d444a711f073d9612474e999721c0c0d45fd8d8563ce8411dab66ccc7899e",
+   "exec": "FINISHED_WITH_RETURN"
+  },
+  {
+   "t": "2026-10-13T15:46:30.324Z",
+   "scenario": "uphold",
+   "msg": "resolved YES, committed excerpt \"btc daily summary | btc daily close was above 90000 usd | source: example price feed\" digest f18e3e50ce3a9387",
+   "excerpt": "btc daily summary | btc daily close was above 90000 usd | source: example price feed",
+   "digest": "f18e3e50ce3a9387d4770271025267788e15ad4907414152c520c3e51da9ae23"
+  },
+  {
+   "t": "2026-10-13T15:46:56.411Z",
+   "scenario": "uphold",
+   "msg": "challenge 0x11c14dc545 exec=FINISHED_WITH_RETURN result=AGREE",
+   "fn": "challenge",
+   "hash": "0x11c14dc5455818410810c30574bf5dd6a187c20fed1a378273c6cda48d06c083",
+   "exec": "FINISHED_WITH_RETURN"
+  },
+  {
+   "t": "2026-10-13T15:47:08.340Z",
+   "scenario": "stale",
+   "msg": "resolve_stale_dispute 0x3703b9ddc5 exec=FINISHED_WITH_ERROR result=AGREE",
+   "fn": "resolve_stale_dispute",
+   "hash": "0x3703b9ddc533000f626e20aeaf2f5e841573d4673ff20fffdac0dd8ace157c11",
+   "exec": "FINISHED_WITH_ERROR"
+  },
+  {
+   "t": "2026-10-13T15:47:10.242Z",
+   "scenario": "stale",
+   "msg": "early resolve_stale_dispute: exec=FINISHED_WITH_ERROR, status still disputed"
+  },
+  {
+   "t": "2026-10-13T15:47:10.243Z",
+   "scenario": "stale",
+   "msg": "waiting 117 min for stale_after"
+  },
+  {
+   "t": "2026-10-13T15:47:27.387Z",
+   "scenario": "claim",
+   "msg": "finalize 0x7fabc43b20 exec=FINISHED_WITH_ERROR result=AGREE",
+   "fn": "finalize",
+   "hash": "0x7fabc43b20f39e2e3723bcac88226be79a7c9691beaa7aaedfbd17387ec7e427",
+   "exec": "FINISHED_WITH_ERROR"
+  },
+  {
+   "t": "2026-10-13T15:47:29.197Z",
+   "scenario": "claim",
+   "msg": "early finalize: exec=FINISHED_WITH_ERROR, status still resolved"
+  },
+  {
+   "t": "2026-10-13T15:47:29.198Z",
+   "scenario": "claim",
+   "msg": "waiting 57 min for the challenge window"
+  },
+  {
+   "t": "2026-10-13T15:47:36.139Z",
+   "scenario": "overturn",
+   "msg": "resolve_dispute 0xafe9e4c0bf exec=NOT_VOTED result=IDLE",
+   "fn": "resolve_dispute",
+   "hash": "0xafe9e4c0bf1f34b19293f0e1a4cda0841328542db156606d5295c03ee6245dde",
+   "exec": "NOT_VOTED"
+  },
+  {
+   "t": "2026-10-13T15:47:58.286Z",
+   "scenario": "overturn",
+   "msg": "attempt 1 left the dispute open (NOT_VOTED/IDLE)"
+  },
+  {
+   "t": "2026-10-13T15:48:25.483Z",
+   "scenario": "uphold",
+   "msg": "resolve_dispute 0xe6bd1e42d5 exec=FINISHED_WITH_RETURN result=AGREE",
+   "fn": "resolve_dispute",
+   "hash": "0xe6bd1e42d5568323a77a6745b0b6084ac14383bfa49b752d42b24fad250ced04",
+   "exec": "FINISHED_WITH_RETURN"
+  },
+  {
+   "t": "2026-10-13T15:48:46.919Z",
+   "scenario": "uphold",
+   "msg": "dispute resolved on attempt 1: status=finalized outcome=YES note=\"The committed evidence explicitly states that the BTC daily close was above 90000 USD, which directly supports the YES resolution regardless of the objection.\"",
+   "attempts": 1,
+   "outcome": "yes",
+   "note": "The committed evidence explicitly states that the BTC daily close was above 90000 USD, which directly supports the YES resolution regardless of the objection."
+  },
+  {
+   "t": "2026-10-13T15:49:18.288Z",
+   "scenario": "overturn",
+   "msg": "resolve_dispute 0x9e83afebed exec=FINISHED_WITH_RETURN result=AGREE",
+   "fn": "resolve_dispute",
+   "hash": "0x9e83afebedcde63630d5b2162473c40e1cfbbabacd923a53805116bebf8a7506",
+   "exec": "FINISHED_WITH_RETURN"
+  },
+  {
+   "t": "2026-10-13T15:49:40.071Z",
+   "scenario": "overturn",
+   "msg": "dispute resolved on attempt 2: status=finalized outcome=NO note=\"The committed evidence explicitly states the verified close was 89500 USD, which is not above 90000 USD.\"",
+   "attempts": 2,
+   "outcome": "no",
+   "note": "The committed evidence explicitly states the verified close was 89500 USD, which is not above 90000 USD."
+  },
+  {
+   "t": "2026-10-13T15:50:59.055Z",
+   "scenario": "changed",
+   "msg": "challenge 0x6180b3c53e exec=FINISHED_WITH_RETURN result=AGREE",
+   "fn": "challenge",
+   "hash": "0x6180b3c53e95a6aec7e2abb43266f6e73f54bbd0284ecff2d3fa1025b54e211c",
+   "exec": "FINISHED_WITH_RETURN"
+  },
+  {
+   "t": "2026-10-13T15:51:20.708Z",
+   "scenario": "changed",
+   "msg": "resolve_dispute 0xe6593f9fe5 exec=NOT_VOTED result=IDLE",
+   "fn": "resolve_dispute",
+   "hash": "0xe6593f9fe5e2a100ea01b0b97d7b9b83ed16759f9393b010346d11616254171b",
+   "exec": "NOT_VOTED"
+  },
+  {
+   "t": "2026-10-13T15:51:42.050Z",
+   "scenario": "changed",
+   "msg": "attempt 1 left the dispute open (NOT_VOTED/IDLE)"
+  },
+  {
+   "t": "2026-10-13T15:52:40.023Z",
+   "scenario": "changed",
+   "msg": "resolve_dispute 0xda31ad9bb8 exec=FINISHED_WITH_ERROR result=IDLE",
+   "fn": "resolve_dispute",
+   "hash": "0xda31ad9bb82ccd335d17d783b0cc5709e1631de8298cad10821e8a70d89fb433",
+   "exec": "FINISHED_WITH_ERROR"
+  },
+  {
+   "t": "2026-10-13T15:53:02.214Z",
+   "scenario": "changed",
+   "msg": "attempt 2 left the dispute open (FINISHED_WITH_ERROR/IDLE)"
+  },
+  {
+   "t": "2026-10-13T15:53:27.539Z",
+   "scenario": "changed",
+   "msg": "resolve_dispute 0x2d40ab531b exec=FINISHED_WITH_RETURN result=AGREE",
+   "fn": "resolve_dispute",
+   "hash": "0x2d40ab531b2160dd4a9dcf58d0bf2f0ff59bcb8fbd602b186e7341ba5fa0ba4b",
+   "exec": "FINISHED_WITH_RETURN"
+  },
+  {
+   "t": "2026-10-13T15:53:48.778Z",
+   "scenario": "changed",
+   "msg": "dispute resolved on attempt 3: status=finalized outcome=YES note=\"The committed evidence, which represents the state of the page at resolution, shows that the BTC daily close was above 90000 USD, supporting the resolved outcome of YES.\"",
+   "attempts": 3,
+   "outcome": "yes",
+   "note": "The committed evidence, which represents the state of the page at resolution, shows that the BTC daily close was above 90000 USD, supporting the resolved outcome of YES."
+  },
+  {
+   "t": "2026-10-13T15:53:48.779Z",
+   "scenario": "changed",
+   "msg": "after the edit the dispute ended finalized with outcome YES (note: The committed evidence, which represents the state of the page at resolution, shows that the BTC daily close was above 90000 USD, supporting the resolved outcome of YES.)"
+  },
+  {
+   "t": "2026-10-13T16:14:08.646Z",
+   "scenario": "claim",
+   "msg": "resolve tx FINALIZED 30.0 min after it was accepted",
+   "label": "resolve tx",
+   "finalizedAfterMinutes": 30
+  },
+  {
+   "t": "2026-10-13T16:18:26.950Z",
+   "scenario": "uphold",
+   "msg": "resolve_dispute tx FINALIZED 29.7 min after it was accepted",
+   "label": "resolve_dispute tx",
+   "finalizedAfterMinutes": 29.7
+  },
+  {
+   "t": "2026-10-13T16:18:43.440Z",
+   "scenario": "uphold",
+   "msg": "claim 0xc78b48b000 exec=FINISHED_WITH_RETURN result=AGREE",
+   "fn": "claim",
+   "hash": "0xc78b48b000cf7c9089951015360eaa6b698f04d61d51721dbb4477edd7e488da",
+   "exec": "FINISHED_WITH_RETURN"
+  },
+  {
+   "t": "2026-10-13T16:18:45.324Z",
+   "scenario": "uphold",
+   "msg": "winner payout 0.005250 = pool 0.005000 + forfeited bond 0.000250"
+  },
+  {
+   "t": "2026-10-13T16:19:20.049Z",
+   "scenario": "overturn",
+   "msg": "resolve_dispute tx (also returns the bond) FINALIZED 29.7 min after it was accepted",
+   "label": "resolve_dispute tx (also returns the bond)",
+   "finalizedAfterMinutes": 29.7
+  },
+  {
+   "t": "2026-10-13T16:19:20.671Z",
+   "scenario": "overturn",
+   "msg": "challenger balance 4.987742 -> 4.987369 after posting the bond -> 4.984720 once finalized (bond 0.000250 returned)",
+   "before": "4987741683329684850",
+   "afterBond": "4987369365144142100",
+   "refunded": "4984719846463647550"
+  },
+  {
+   "t": "2026-10-13T16:19:36.593Z",
+   "scenario": "overturn",
+   "msg": "claim 0x1da8b84f24 exec=FINISHED_WITH_RETURN result=AGREE",
+   "fn": "claim",
+   "hash": "0x1da8b84f24e98fe65b193a5607bf5c356795b11cb51f0f6403dbcc65c57d83ec",
+   "exec": "FINISHED_WITH_RETURN"
+  },
+  {
+   "t": "2026-10-13T16:19:37.998Z",
+   "scenario": "overturn",
+   "msg": "new winner payout 0.005000 (whole pool = 0.005000)"
+  },
+  {
+   "t": "2026-10-13T16:19:40.045Z",
+   "scenario": "overturn",
+   "msg": "claim send failed (Transaction reverted: EVM tx 0x097f248d702f152e404e0fce40c1ff25bd1eec7), retry 1"
+  },
+  {
+   "t": "2026-10-13T16:20:20.509Z",
+   "scenario": "overturn",
+   "msg": "claim 0xed0b446348 exec=FINISHED_WITH_ERROR result=AGREE",
+   "fn": "claim",
+   "hash": "0xed0b446348657e38fb39d508331894910de5a3959091af26201d7f534f570d7e",
+   "exec": "FINISHED_WITH_ERROR"
+  },
+  {
+   "t": "2026-10-13T16:20:20.510Z",
+   "scenario": "overturn",
+   "msg": "former winner claim: exec=FINISHED_WITH_ERROR (refused)"
+  },
+  {
+   "t": "2026-10-13T16:44:21.963Z",
+   "scenario": "claim",
+   "msg": "finalize 0xede0ac761a exec=FINISHED_WITH_RETURN result=AGREE",
+   "fn": "finalize",
+   "hash": "0xede0ac761a7bdb5fca663bb6d0e5d37da209ffd0529aedb04ce8bb9eca12c13d",
+   "exec": "FINISHED_WITH_RETURN"
+  },
+  {
+   "t": "2026-10-13T16:44:42.492Z",
+   "scenario": "claim",
+   "msg": "claim 0x5b064d5b5b exec=FINISHED_WITH_RETURN result=AGREE",
+   "fn": "claim",
+   "hash": "0x5b064d5b5b229019687b155833e482b37031e94f6926d27f03bbb284723b1a18",
+   "exec": "FINISHED_WITH_RETURN"
+  },
+  {
+   "t": "2026-10-13T16:44:44.007Z",
+   "scenario": "claim",
+   "msg": "claim payout recorded 0.005000 (whole pool = 0.005000)"
+  },
+  {
+   "t": "2026-10-13T16:44:57.965Z",
+   "scenario": "claim",
+   "msg": "claim 0x97ec8ae0d1 exec=FINISHED_WITH_ERROR result=AGREE",
+   "fn": "claim",
+   "hash": "0x97ec8ae0d18ce3f5f42e1903f15acf35a7c5523596bf40c351044b20f1edd332",
+   "exec": "FINISHED_WITH_ERROR"
+  },
+  {
+   "t": "2026-10-13T16:44:57.965Z",
+   "scenario": "claim",
+   "msg": "duplicate claim: exec=FINISHED_WITH_ERROR (refused)"
+  },
+  {
+   "t": "2026-10-13T16:45:11.258Z",
+   "scenario": "claim",
+   "msg": "claim 0x383052fd77 exec=FINISHED_WITH_ERROR result=AGREE",
+   "fn": "claim",
+   "hash": "0x383052fd77e514fe98512f5e2c8d059740e60973b3ce308980fe61510f3c9d01",
+   "exec": "FINISHED_WITH_ERROR"
+  },
+  {
+   "t": "2026-10-13T16:45:11.258Z",
+   "scenario": "claim",
+   "msg": "losing side claim: exec=FINISHED_WITH_ERROR (refused)"
+  },
+  {
+   "t": "2026-10-13T16:48:41.126Z",
+   "scenario": "uphold",
+   "msg": "claim tx FINALIZED 29.9 min after it was accepted",
+   "label": "claim tx",
+   "finalizedAfterMinutes": 29.9
+  },
+  {
+   "t": "2026-10-13T16:49:35.658Z",
+   "scenario": "overturn",
+   "msg": "claim tx FINALIZED 29.3 min after it was accepted",
+   "label": "claim tx",
+   "finalizedAfterMinutes": 29.3
+  },
+  {
+   "t": "2026-10-13T17:14:59.285Z",
+   "scenario": "claim",
+   "msg": "claim tx FINALIZED 29.8 min after it was accepted",
+   "label": "claim tx",
+   "finalizedAfterMinutes": 29.8
+  },
+  {
+   "t": "2026-10-13T17:14:59.542Z",
+   "scenario": "claim",
+   "msg": "winner balance 4.935922 -> 4.949045 (+0.013123, before its own gas)",
+   "before": "4935921629748241900",
+   "after": "4949044988467124300"
+  },
+  {
+   "t": "2026-10-13T17:43:24.498Z",
+   "scenario": "misleading",
+   "msg": "reclaim_stake 0xfe7277108e exec=FINISHED_WITH_RETURN result=AGREE",
+   "fn": "reclaim_stake",
+   "hash": "0xfe7277108e6c38a947645574062f8d1d64029049eef5b46bfe1882ca269d222f",
+   "exec": "FINISHED_WITH_RETURN"
+  },
+  {
+   "t": "2026-10-13T17:43:43.920Z",
+   "scenario": "misleading",
+   "msg": "reclaim_stake 0x179180ab1d exec=FINISHED_WITH_RETURN result=AGREE",
+   "fn": "reclaim_stake",
+   "hash": "0x179180ab1d7eba5cdba54a9305928875a3bb794ab743ed1008af247ddd3adcba",
+   "exec": "FINISHED_WITH_RETURN"
+  },
+  {
+   "t": "2026-10-13T17:43:46.866Z",
+   "scenario": "misleading",
+   "msg": "reclaim payouts recorded: yes 0.003000, no 0.002000"
+  },
+  {
+   "t": "2026-10-13T17:44:03.479Z",
+   "scenario": "stale",
+   "msg": "resolve_stale_dispute 0x0f8b021dda exec=FINISHED_WITH_RETURN result=AGREE",
+   "fn": "resolve_stale_dispute",
+   "hash": "0x0f8b021dda1cd897ba3ef2328b223990e8fab5431cf7bebb28e347fe2c2257a5",
+   "exec": "FINISHED_WITH_RETURN"
+  },
+  {
+   "t": "2026-10-13T17:44:21.738Z",
+   "scenario": "misleading",
+   "msg": "reclaim_stake 0xa3f489075a exec=FINISHED_WITH_ERROR result=AGREE",
+   "fn": "reclaim_stake",
+   "hash": "0xa3f489075a97608e385942afddfe46d8c9e616006cbed367a87f9569b8a89648",
+   "exec": "FINISHED_WITH_ERROR"
+  },
+  {
+   "t": "2026-10-13T17:44:21.739Z",
+   "scenario": "misleading",
+   "msg": "second reclaim: exec=FINISHED_WITH_ERROR (refused, nothing sent)"
+  },
+  {
+   "t": "2026-10-13T18:13:24.409Z",
+   "scenario": "misleading",
+   "msg": "reclaim tx FINALIZED 29.0 min after it was accepted",
+   "label": "reclaim tx",
+   "finalizedAfterMinutes": 29
+  },
+  {
+   "t": "2026-10-13T18:13:24.625Z",
+   "scenario": "misleading",
+   "msg": "staker balance 4.954295 -> 4.957079"
+  },
+  {
+   "t": "2026-10-13T18:13:43.590Z",
+   "scenario": "misleading",
+   "msg": "create_market 0x4b0cfca226 exec=FINISHED_WITH_RETURN result=AGREE",
+   "fn": "create_market",
+   "hash": "0x4b0cfca226179aba3f2d4f9892a70c2e27864ce2465db52cc194b71cfdeb241c",
+   "exec": "FINISHED_WITH_RETURN"
+  },
+  {
+   "t": "2026-10-13T18:13:59.315Z",
+   "scenario": "misleading",
+   "msg": "stake 0x95dcf73192 exec=FINISHED_WITH_RETURN result=AGREE",
+   "fn": "stake",
+   "hash": "0x95dcf73192a2b6d04a4ff9bcf0cee39735a2a2df047db2a13e3af58ba548d684",
+   "exec": "FINISHED_WITH_RETURN"
+  },
+  {
+   "t": "2026-10-13T18:14:05.721Z",
+   "scenario": "stale",
+   "msg": "resolve_stale_dispute tx FINALIZED 29.8 min after it was accepted",
+   "label": "resolve_stale_dispute tx",
+   "finalizedAfterMinutes": 29.8
+  },
+  {
+   "t": "2026-10-13T18:14:14.552Z",
+   "scenario": "misleading",
+   "msg": "stake 0x00c5de5790 exec=FINISHED_WITH_RETURN result=AGREE",
+   "fn": "stake",
+   "hash": "0x00c5de5790714f024fe63a23d4af0f4875fd13140a491c724a4160b84bbf4ddb",
+   "exec": "FINISHED_WITH_RETURN"
+  },
+  {
+   "t": "2026-10-13T18:14:16.306Z",
+   "scenario": "misleading",
+   "msg": "waiting 26 min for resolve_after for unconfirmed.txt"
+  },
+  {
+   "t": "2026-10-13T18:14:25.701Z",
+   "scenario": "stale",
+   "msg": "claim 0x149e13f913 exec=FINISHED_WITH_RETURN result=AGREE",
+   "fn": "claim",
+   "hash": "0x149e13f913be8279ce7db6f80db0b4bf614d10394f7ef8ca4a8db0924b344e85",
+   "exec": "FINISHED_WITH_RETURN"
+  },
+  {
+   "t": "2026-10-13T18:14:27.164Z",
+   "scenario": "stale",
+   "msg": "after the stale fallback the winner is paid 0.005250 = pool + bond"
+  },
+  {
+   "t": "2026-10-13T18:40:09.128Z",
+   "scenario": "misleading",
+   "msg": "resolve 0xedabebadbe exec=FINISHED_WITH_ERROR result=AGREE",
+   "fn": "resolve",
+   "hash": "0xedabebadbeecddd5c89d86d3f1383bbe3de018070a5e5f4d9fc0bfa910d60143",
+   "exec": "FINISHED_WITH_ERROR"
+  },
+  {
+   "t": "2026-10-13T18:40:31.293Z",
+   "scenario": "misleading",
+   "msg": "only an unconfirmed expectation: resolve exec=FINISHED_WITH_ERROR, status after = open, evidence recorded = \"\""
+  },
+  {
+   "t": "2026-10-13T18:40:31.293Z",
+   "scenario": "misleading",
+   "msg": "waiting 120 min for stale_after, so stakers can reclaim"
+  },
+  {
+   "t": "2026-10-13T18:44:30.804Z",
+   "scenario": "stale",
+   "msg": "claim tx FINALIZED 30.1 min after it was accepted",
+   "label": "claim tx",
+   "finalizedAfterMinutes": 30.1
+  }
+ ]
+}

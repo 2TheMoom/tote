@@ -28,6 +28,7 @@ export type MarketAction =
   | "finalize"
   | "resolve_dispute"
   | "resolve_stale_dispute"
+  | "claim_bond"
   | "claim"
   | "reclaim_yes"
   | "reclaim_no";
@@ -82,10 +83,20 @@ export function bondFor(m: Market): bigint {
 }
 
 /**
+ * After an overturned challenge the bond is owed back to the challenger. It is sent by a separate
+ * transaction (claim_bond), never by the one that runs the model.
+ */
+export function bondOwed(m: Market): boolean {
+  return m.status === "finalized" && BigInt(m.bond || "0") > BigInt(0) && BigInt(m.bonus || "0") === BigInt(0) && !m.bond_refunded;
+}
+
+/**
  * The actions the connected wallet can usefully trigger, mapped from the
  * contract's rules:
  *  - stake: anyone but the creator, before lock_time
  *  - resolve, finalize, resolve_dispute, resolve_stale_dispute: permissionless
+ *    (resolve_dispute only records the verdict and moves no money)
+ *  - claim_bond: permissionless; returns an overturned challenger's bond
  *  - challenge: a staker in this market, up to the deadline, with a bond
  *  - claim: a wallet with a winning stake that has not claimed
  *  - reclaim: a wallet with a stake on that side that has not reclaimed it
@@ -104,6 +115,7 @@ export function availableActions(m: Market, ctx: ActionContext): MarketAction[] 
   if (readyToFinalize(m, ctx.now) && connected) actions.push("finalize");
   if (m.status === "disputed" && connected) actions.push("resolve_dispute");
   if (disputeIsStale(m, ctx.now) && connected) actions.push("resolve_stale_dispute");
+  if (bondOwed(m) && connected) actions.push("claim_bond");
 
   if (m.status === "finalized" && connected && !pos.claimed && (m.outcome === "yes" || m.outcome === "no")) {
     const winning = m.outcome === "yes" ? pos.yesStake : pos.noStake;
@@ -142,12 +154,15 @@ export function expectedStatus(action: MarketAction | "create"): ((m: Market) =>
     // an inconclusive verdict reverts, so a dispute that is still "disputed" means nothing changed
     case "resolve_dispute": return (m) => m.status === "finalized";
     case "resolve_stale_dispute": return (m) => m.status === "finalized";
-    // stake, claim and reclaim are confirmed against the wallet's own position instead
+    // stake, claim, claim_bond and reclaim are confirmed against the contract's payout records instead
     default: return null;
   }
 }
 
-/** True for actions whose transfer only lands when the transaction finalizes. */
+/**
+ * True for actions whose transfer only lands when the transaction finalizes.
+ * resolve_dispute is deliberately not one of them: it runs the model and only records a verdict.
+ */
 export function movesFunds(action: MarketAction | "create"): boolean {
-  return action === "claim" || action === "reclaim_yes" || action === "reclaim_no" || action === "resolve_dispute";
+  return action === "claim" || action === "claim_bond" || action === "reclaim_yes" || action === "reclaim_no";
 }

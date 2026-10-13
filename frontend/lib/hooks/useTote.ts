@@ -193,11 +193,20 @@ export function useChallenge() {
 export function useResolveDispute() {
   return useWriteAction<{ id: string }>(
     (c, a, _w, onProgress) => c.resolveDispute(a.id, onProgress),
-    {
-      confirmed: { title: "Verdict recorded", description: "Claims are open once this finalizes. If the outcome was overturned the challenger's bond is returned." },
-      finalized: { title: "Dispute settled", description: "The transaction finalized." },
-    },
+    { confirmed: { title: "Verdict recorded", description: "No money has moved. Claims are open; if the outcome was overturned, anyone can return the challenger's bond." } },
     "Failed to resolve dispute",
+    (a) => a.id
+  );
+}
+
+export function useClaimBond() {
+  return useWriteAction<{ id: string }>(
+    (c, a, _w, onProgress) => c.claimBond(a.id, onProgress),
+    {
+      confirmed: { title: "Bond refund recorded", description: PAYS },
+      finalized: { title: "Bond returned", description: "The transaction finalized and the challenger's bond was delivered." },
+    },
+    "Failed to return the bond",
     (a) => a.id
   );
 }

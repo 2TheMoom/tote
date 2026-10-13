@@ -273,6 +273,14 @@ class Tote {
     });
   }
 
+  /** Returns an overturned challenger's bond. Permissionless, and confirmed by the contract's own refund record. */
+  async claimBond(marketId: string, onProgress?: WriteOptions["onProgress"]) {
+    return this.submitWrite("claim_bond", [marketId], {
+      action: "claim_bond", marketId, onProgress,
+      confirm: async () => (await this.getMarket(marketId))?.bond_refunded === true,
+    });
+  }
+
   async resolveStaleDispute(marketId: string, onProgress?: WriteOptions["onProgress"]) {
     return this.submitWrite("resolve_stale_dispute", [marketId], { action: "resolve_stale_dispute", marketId, onProgress });
   }

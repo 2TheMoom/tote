@@ -17,6 +17,7 @@ import {
   useClaim,
   useReclaimStake,
   useResolveStaleDispute,
+  useClaimBond,
 } from "@/lib/hooks/useTote";
 import {
   Dialog,
@@ -29,7 +30,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { Market } from "@/lib/contracts/types";
-import { availableActions, bondFor, challengeDeadline, challengeOpen as isChallengeOpen, disputeStaleAt, recoveryNote } from "@/lib/market-actions";
+import { availableActions, bondFor, bondOwed, challengeDeadline, challengeOpen as isChallengeOpen, disputeStaleAt, recoveryNote } from "@/lib/market-actions";
 import { getTxExplorerUrl } from "@/lib/genlayer/chains";
 import { formatGen, MIN_STALE, MIN_WINDOW, markerProblem, normalizeLine, urlProblem } from "@/lib/limits";
 import type { WriteProgress } from "@/lib/hooks/useTote";
@@ -379,6 +380,7 @@ function MarketHero({ id }: { id: string }) {
   const staleDisputeAction = useResolveStaleDispute();
   const finalizeAction = useFinalize();
   const claimAction = useClaim();
+  const bondAction = useClaimBond();
   const reclaimAction = useReclaimStake();
   const { data: position } = useMyPosition(id, address ?? null);
 
@@ -397,7 +399,7 @@ function MarketHero({ id }: { id: string }) {
   const challengeOpen = isChallengeOpen(m, now);
   const actions = availableActions(m, { address, now, position });
   const note = recoveryNote(m, now);
-  const all = [resolveAction, resolveDisputeAction, staleDisputeAction, finalizeAction, claimAction, reclaimAction];
+  const all = [resolveAction, resolveDisputeAction, staleDisputeAction, finalizeAction, claimAction, bondAction, reclaimAction];
   // the action that reported progress most recently, not the first hook that ever did
   const active = all.filter((a) => a.progress).sort((x, y) => (y.progress?.at ?? 0) - (x.progress?.at ?? 0))[0];
   const staleAt = disputeStaleAt(m);
@@ -490,6 +492,11 @@ function MarketHero({ id }: { id: string }) {
             {staleDisputeAction.isPending ? "Settling…" : "Settle Stuck Dispute"}
           </button>
         )}
+        {actions.includes("claim_bond") && (
+          <button className="btn-tote ghost" disabled={bondAction.isPending} onClick={() => bondAction.run({ id })}>
+            {bondAction.isPending ? "Returning…" : "Return Bond To Challenger"}
+          </button>
+        )}
         {actions.includes("claim") && (
           <button className="btn-tote primary" disabled={claimAction.isPending} onClick={() => claimAction.run({ id })}>
             {claimAction.isPending ? "Claiming…" : "Claim Winnings"}
@@ -509,6 +516,12 @@ function MarketHero({ id }: { id: string }) {
       </div>
 
       {active && <TxProgress progress={active.progress} pending={active.isPending} />}
+
+      {bondOwed(m) && (
+        <div className="mt-4 font-mono text-xs text-ink-faint">
+          The outcome was overturned. The challenger&apos;s bond is returned by a separate transaction that anyone can send; it arrives when that transaction finalizes.
+        </div>
+      )}
 
       {m.status === "disputed" && !note && (
         <div className="mt-4 font-mono text-xs text-ink-faint">

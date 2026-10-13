@@ -72,8 +72,9 @@ generic modal.
   inside the challenge window (1 hour to 7 days) by posting a bond of exactly
   5% of all stakes. Anyone can resolve the dispute against the committed
   excerpt and the page as it reads now. Upheld: the outcome stands and the
-  bond goes to the winners. Overturned: the outcome flips and the bond is
-  returned. Unclear: nothing changes.
+  bond goes to the winners. Overturned: the outcome flips and anyone can send
+  **Return Bond**, a separate transaction, to give the bond back. Unclear:
+  nothing changes. Resolving only records the verdict and moves no money.
 - **Finalize / Claim**: close the challenge window, then claim a pari-mutuel
   share of the pool. Claim shows only for a wallet with a winning stake that
   has not claimed, and Challenge only for a staker in that market.

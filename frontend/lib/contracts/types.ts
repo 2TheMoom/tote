@@ -21,6 +21,8 @@ export interface Market {
   disputed_at: string;
   bond: string; // wei posted by the challenger, "0" until a challenge
   bonus: string; // wei of a forfeited bond added to the winners' pool
+  bond_refunded: boolean; // true once an overturned challenge's bond was sent back
+  challenger: string; // who posted the bond
   evidence_excerpt: string; // the lines validators agreed on when the market resolved
   evidence_digest: string; // sha256 of that excerpt
   dispute_reason: string;

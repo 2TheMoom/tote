@@ -34,6 +34,8 @@ export function decodeMarket(raw: any): Market {
     disputed_at: s(obj.disputed_at),
     bond: s(obj.bond),
     bonus: s(obj.bonus),
+    bond_refunded: obj.bond_refunded === true,
+    challenger: s(obj.challenger, ""),
     evidence_excerpt: s(obj.evidence_excerpt, ""),
     evidence_digest: s(obj.evidence_digest, ""),
     dispute_reason: s(obj.dispute_reason, ""),

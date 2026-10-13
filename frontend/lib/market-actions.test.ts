@@ -7,6 +7,7 @@ import {
   EMPTY_POSITION,
   availableActions,
   bondFor,
+  bondOwed,
   challengeDeadline,
   challengeOpen,
   disputeIsStale,
@@ -44,6 +45,8 @@ function market(over: Partial<Market>): Market {
     disputed_at: "0",
     bond: "0",
     bonus: "0",
+    bond_refunded: false,
+    challenger: "",
     evidence_excerpt: "",
     evidence_digest: "",
     dispute_reason: "",
@@ -190,6 +193,20 @@ describe("availableActions follows the contract's access rules", () => {
     assert.deepEqual(act(m, null, T, yesStaker), []);
   });
 
+  it("an overturned challenge's bond is returned by anyone, once, and only then", () => {
+    const overturned = market({ status: "finalized", outcome: "no", bond: "50", bonus: "0" });
+    assert.equal(bondOwed(overturned), true);
+    assert.deepEqual(act(overturned, OUTSIDER, T, EMPTY_POSITION), ["claim_bond"]);
+    assert.deepEqual(act(overturned, null, T, EMPTY_POSITION), []);
+    assert.equal(bondOwed({ ...overturned, bond_refunded: true }), false);
+    assert.deepEqual(act({ ...overturned, bond_refunded: true }, OUTSIDER, T, EMPTY_POSITION), []);
+    // an upheld or stale-settled challenge forfeits the bond to the winners: nothing to return
+    assert.equal(bondOwed(market({ status: "finalized", outcome: "yes", bond: "50", bonus: "50" })), false);
+    // no challenge at all, or not finalized yet
+    assert.equal(bondOwed(market({ status: "finalized", outcome: "yes" })), false);
+    assert.equal(bondOwed(market({ status: "disputed", bond: "50" })), false);
+  });
+
   it("an overturned outcome pays the other side", () => {
     const m = market({ status: "finalized", outcome: "no" });
     assert.deepEqual(act(m, ALICE, T, noStaker), ["claim"]);
@@ -223,10 +240,12 @@ describe("wording and write confirmation", () => {
     assert.ok(expectedStatus("resolve_stale_dispute")!(market({ status: "finalized" })));
     assert.equal(expectedStatus("stake"), null); // confirmed against the wallet's own stake instead
     assert.equal(expectedStatus("claim"), null);
+    assert.equal(expectedStatus("claim_bond"), null); // confirmed by the contract's refund record instead
   });
   it("only fund-moving actions wait for finality", () => {
-    assert.ok(movesFunds("claim") && movesFunds("reclaim_yes") && movesFunds("reclaim_no") && movesFunds("resolve_dispute"));
-    assert.ok(!movesFunds("stake") && !movesFunds("resolve") && !movesFunds("create"));
+    assert.ok(movesFunds("claim") && movesFunds("claim_bond") && movesFunds("reclaim_yes") && movesFunds("reclaim_no"));
+    // resolve_dispute runs the model and only records a verdict: no transfer may share its transaction
+    assert.ok(!movesFunds("resolve_dispute") && !movesFunds("stake") && !movesFunds("resolve") && !movesFunds("create"));
   });
 });
 

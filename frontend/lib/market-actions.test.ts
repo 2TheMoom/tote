@@ -5,258 +5,227 @@ import { decodeMarket } from "./contracts/decode.ts";
 import type { Market } from "./contracts/types.ts";
 import {
   EMPTY_POSITION,
-  RECOVERY_TIMEOUT_SECONDS,
   availableActions,
+  bondFor,
+  challengeDeadline,
   challengeOpen,
   disputeIsStale,
+  disputeStaleAt,
+  expectedStatus,
+  movesFunds,
   readyToFinalize,
   recoveryNote,
   stakesReclaimable,
   type Position,
 } from "./market-actions.ts";
+import { BOND_BPS, MAX_MARKER, MAX_STALE, MAX_WINDOW, MIN_MARKER, MIN_STALE, MIN_WINDOW, markerProblem, normalizeLine, requiredBond, urlProblem } from "./limits.ts";
 
 const CREATOR = "0x1111111111111111111111111111111111111111";
 const ALICE = "0x2222222222222222222222222222222222222222";
 const BOB = "0x3333333333333333333333333333333333333333";
+const OUTSIDER = "0x4444444444444444444444444444444444444444";
 const T = 1_800_000_000;
-// Hard-coded on purpose: this is the contract's 24 hours, not whatever the app module says.
-const DAY = 86400;
-const ONE = BigInt(1000);
-const ZERO = BigInt(0);
+const HOUR = 3600;
 
 function market(over: Partial<Market>): Market {
   return {
     creator: CREATOR,
     question: "q",
-    verification_url: "https://example.com",
-    yes_marker: "yes",
-    no_marker: "no",
-    lock_time: String(T + 3600),
-    resolve_after: String(T + 3700),
+    verification_url: "https://example.com/x",
+    yes_marker: "outcome was yes 1",
+    no_marker: "outcome was no 1",
+    lock_time: String(T + HOUR),
+    resolve_after: String(T + 2 * HOUR),
+    challenge_window: String(HOUR),
+    stale_after: String(2 * HOUR),
     status: "open",
     outcome: "",
     resolved_at: "0",
-    challenge_deadline: "0",
+    disputed_at: "0",
+    bond: "0",
+    bonus: "0",
+    evidence_excerpt: "",
+    evidence_digest: "",
     dispute_reason: "",
     resolution_note: "",
-    total_yes_pool: "1000",
-    total_no_pool: "1000",
+    total_yes_pool: "600",
+    total_no_pool: "400",
     ...over,
   };
 }
 
-function position(over: Partial<Position>): Position {
-  return { ...EMPTY_POSITION, ...over };
-}
+const pos = (over: Partial<Position>): Position => ({ ...EMPTY_POSITION, ...over });
+const yesStaker = pos({ yesStake: BigInt(600) });
+const noStaker = pos({ noStake: BigInt(400) });
 
-const has = (m: Market, who: string | null, now: number, pos?: Position) =>
-  availableActions(m, { address: who, now, position: pos });
+describe("limits match the contract", () => {
+  const source = readFileSync(new URL("../../contracts/tote.py", import.meta.url), "utf8");
+  const constant = (name: string) => {
+    const m = source.match(new RegExp(`^${name}\\s*=\\s*([0-9 *]+)`, "m"));
+    assert.ok(m, `${name} not found in the contract`);
+    return m[1].split("*").reduce((a, b) => a * Number(b.trim()), 1);
+  };
+  it("every constant the form validates against is the contract's", () => {
+    assert.equal(MIN_WINDOW, constant("MIN_WINDOW"));
+    assert.equal(MAX_WINDOW, constant("MAX_WINDOW"));
+    assert.equal(MIN_STALE, constant("MIN_STALE"));
+    assert.equal(MAX_STALE, constant("MAX_STALE"));
+    assert.equal(BOND_BPS, constant("BOND_BPS"));
+    assert.equal(MIN_MARKER, constant("MIN_MARKER"));
+    assert.equal(MAX_MARKER, constant("MAX_MARKER"));
+  });
+  it("the challenge window is longer than the ~30 minute finality measured on Bradbury", () => {
+    assert.ok(MIN_WINDOW >= 2 * 30 * 60);
+  });
+});
 
-describe("recovery window matches the contract", () => {
-  it("the app constant equals RECOVERY_TIMEOUT_SECONDS in contracts/tote.py", () => {
-    const source = readFileSync(new URL("../../contracts/tote.py", import.meta.url), "utf8");
-    const match = source.match(/^RECOVERY_TIMEOUT_SECONDS\s*=\s*(\d+)/m);
-    assert.ok(match, "constant not found in the contract");
-    assert.equal(RECOVERY_TIMEOUT_SECONDS, Number(match[1]));
-    assert.equal(RECOVERY_TIMEOUT_SECONDS, DAY);
+describe("validation mirrors the contract", () => {
+  it("normalizes like the contract", () => {
+    assert.equal(normalizeLine("  It’s   Done Now "), "it's done now");
+  });
+  it("refuses short, digit-less and letter-less markers", () => {
+    assert.ok(markerProblem("done 1"));
+    assert.ok(markerProblem("closed above ninety thousand"));
+    assert.ok(markerProblem("123456789012"));
+    assert.equal(markerProblem("BTC daily close was above 90000 USD"), null);
+  });
+  it("refuses the urls the contract refuses", () => {
+    for (const u of ["http://a.com/x", "https://127.0.0.1/x", "https://localhost/x", "https://a.com:8080/x", "https://u:p@a.com/x", "https://printer.local/x"]) {
+      assert.ok(urlProblem(u), u);
+    }
+    assert.equal(urlProblem("https://raw.githubusercontent.com/o/r/main/price.txt"), null);
+  });
+  it("the bond is 5% of all stakes, at least 1", () => {
+    assert.equal(requiredBond(BigInt(1000)), BigInt(50));
+    assert.equal(requiredBond(BigInt(5)), BigInt(1));
+    assert.equal(bondFor(market({})), BigInt(50));
   });
 });
 
 describe("decodeMarket", () => {
-  it("decodes the Map genlayer-js returns, including the abandoned status", () => {
-    const m = decodeMarket(new Map<string, unknown>([["status", "abandoned"], ["challenge_deadline", 1_799_999_000n]]));
-    assert.equal(m.status, "abandoned");
-    assert.equal(m.challenge_deadline, "1799999000");
+  it("decodes the v3 fields from the Map genlayer-js returns", () => {
+    const m = decodeMarket(new Map<string, unknown>([["status", "finalized"], ["bonus", 50n], ["challenge_window", 3600n], ["evidence_digest", "ab12"]]));
+    assert.equal(m.status, "finalized");
+    assert.equal(m.bonus, "50");
+    assert.equal(m.challenge_window, "3600");
+    assert.equal(m.evidence_digest, "ab12");
   });
-
-  it("defaults missing fields", () => {
-    const m = decodeMarket({});
+  it("falls back to safe defaults", () => {
+    const m = decodeMarket(new Map());
     assert.equal(m.status, "open");
-    assert.equal(m.total_yes_pool, "0");
+    assert.equal(m.stale_after, "0");
   });
 });
 
-describe("window boundaries mirror the contract", () => {
-  const resolved = market({ status: "resolved", challenge_deadline: String(T) });
-
-  it("challenge is open up to and including challenge_deadline", () => {
-    assert.equal(challengeOpen(resolved, T), true);
-    assert.equal(challengeOpen(resolved, T + 1), false);
+describe("derived times follow the contract", () => {
+  const resolved = market({ status: "resolved", outcome: "yes", resolved_at: String(T), challenge_window: String(HOUR) });
+  it("the challenge window is resolved_at + challenge_window, inclusive of its last second", () => {
+    assert.equal(challengeDeadline(resolved), T + HOUR);
+    assert.equal(challengeOpen(resolved, T + HOUR), true);
+    assert.equal(challengeOpen(resolved, T + HOUR + 1), false);
+    assert.equal(readyToFinalize(resolved, T + HOUR), false);
+    assert.equal(readyToFinalize(resolved, T + HOUR + 1), true);
   });
-
-  it("finalize opens strictly after challenge_deadline", () => {
-    assert.equal(readyToFinalize(resolved, T), false);
-    assert.equal(readyToFinalize(resolved, T + 1), true);
+  it("there is no deadline before resolution", () => {
+    assert.equal(challengeDeadline(market({})), 0);
   });
-
-  it("a dispute is stale exactly at challenge_deadline + 24h", () => {
-    const d = market({ status: "disputed", challenge_deadline: String(T) });
-    assert.equal(disputeIsStale(d, T + DAY - 1), false);
-    assert.equal(disputeIsStale(d, T + DAY), true);
+  it("a dispute is stale at disputed_at + stale_after, to the second", () => {
+    const d = market({ status: "disputed", disputed_at: String(T), stale_after: String(2 * HOUR) });
+    assert.equal(disputeStaleAt(d), T + 2 * HOUR);
+    assert.equal(disputeIsStale(d, T + 2 * HOUR - 1), false);
+    assert.equal(disputeIsStale(d, T + 2 * HOUR), true);
   });
-
-  it("an open market's stakes are reclaimable exactly at resolve_after + 24h", () => {
-    const o = market({ status: "open", resolve_after: String(T) });
-    assert.equal(stakesReclaimable(o, T + DAY - 1), false);
-    assert.equal(stakesReclaimable(o, T + DAY), true);
-  });
-
-  it("an abandoned market is always reclaimable", () => {
+  it("an open market is reclaimable stale_after past resolve_after", () => {
+    const m = market({});
+    const at = T + 2 * HOUR + 2 * HOUR;
+    assert.equal(stakesReclaimable(m, at - 1), false);
+    assert.equal(stakesReclaimable(m, at), true);
     assert.equal(stakesReclaimable(market({ status: "abandoned" }), T), true);
-  });
-
-  it("a stuck dispute is never reclaimable through reclaim_stake", () => {
-    const d = market({ status: "disputed", resolve_after: String(T - 100 * DAY), challenge_deadline: String(T - 100 * DAY) });
-    assert.equal(stakesReclaimable(d, T), false);
-    const pos = position({ yesStake: ONE });
-    assert.ok(!has(d, ALICE, T, pos).includes("reclaim_yes"));
-  });
-
-  for (const status of ["resolved", "finalized"] as const) {
-    it(`${status} markets are never reclaimable`, () => {
-      assert.equal(stakesReclaimable(market({ status, resolve_after: String(T - 100 * DAY) }), T), false);
-    });
-  }
-});
-
-describe("stake and resolve", () => {
-  const open = market({});
-
-  it("lets anyone but the creator stake before lock_time", () => {
-    assert.ok(has(open, ALICE, T).includes("stake"));
-    assert.ok(!has(open, CREATOR, T).includes("stake"));
-    assert.ok(!has(open, null, T).includes("stake"));
-    assert.ok(!has(open, ALICE, T + 3600).includes("stake"));
-  });
-
-  it("offers resolve to any connected account once resolve_after has passed and both pools are non-empty", () => {
-    const now = T + 3700;
-    assert.ok(has(open, BOB, now).includes("resolve"));
-    assert.ok(!has(open, null, now).includes("resolve"));
-    assert.ok(!has(open, BOB, now - 1).includes("resolve"));
-    assert.ok(!has(market({ total_no_pool: "0" }), BOB, now).includes("resolve"));
-    assert.ok(!has(market({ total_yes_pool: "0" }), BOB, now).includes("resolve"));
+    assert.equal(stakesReclaimable(market({ status: "resolved" }), at + 1e9), false);
   });
 });
 
-describe("challenge is for stakers in the market only", () => {
-  const resolved = market({ status: "resolved", outcome: "yes", challenge_deadline: String(T + 600) });
+describe("availableActions follows the contract's access rules", () => {
+  const act = (m: Market, address: string | null, now: number, position?: Position) => availableActions(m, { address, now, position });
 
-  it("offers it to a staker on either side", () => {
-    assert.ok(has(resolved, ALICE, T, position({ yesStake: ONE })).includes("challenge"));
-    assert.ok(has(resolved, ALICE, T, position({ noStake: ONE })).includes("challenge"));
+  it("open: anyone but the creator stakes before lock_time", () => {
+    const m = market({});
+    assert.deepEqual(act(m, ALICE, T), ["stake"]);
+    assert.deepEqual(act(m, CREATOR, T), []);
+    assert.deepEqual(act(m, null, T), []);
+    assert.deepEqual(act(m, ALICE, T + HOUR), []); // lock_time reached
   });
 
-  it("does not offer it to a non-staker, a disconnected visitor, or after the window", () => {
-    assert.ok(!has(resolved, BOB, T, position({})).includes("challenge"));
-    assert.ok(!has(resolved, BOB, T).includes("challenge"));
-    assert.ok(!has(resolved, null, T, position({ yesStake: ONE })).includes("challenge"));
-    assert.ok(!has(resolved, ALICE, T + 601, position({ yesStake: ONE })).includes("challenge"));
-  });
-});
-
-describe("finalize and dispute resolution are permissionless for any connected account", () => {
-  it("finalize", () => {
-    const resolved = market({ status: "resolved", challenge_deadline: String(T) });
-    assert.ok(has(resolved, BOB, T + 1).includes("finalize"));
-    assert.ok(!has(resolved, BOB, T).includes("finalize"));
-    assert.ok(!has(resolved, null, T + 1).includes("finalize"));
+  it("open: resolving needs resolve_after and stakes on both sides", () => {
+    const m = market({});
+    assert.deepEqual(act(m, OUTSIDER, T + 2 * HOUR - 1), []);
+    assert.deepEqual(act(m, OUTSIDER, T + 2 * HOUR), ["resolve"]);
+    assert.deepEqual(act(market({ total_no_pool: "0" }), OUTSIDER, T + 2 * HOUR), []);
   });
 
-  it("resolve_dispute, and nobody when disconnected", () => {
-    const d = market({ status: "disputed", challenge_deadline: String(T) });
-    for (const who of [CREATOR, ALICE, BOB]) assert.ok(has(d, who, T + 5).includes("resolve_dispute"), who);
-    assert.ok(!has(d, null, T + 5).includes("resolve_dispute"));
+  it("resolved: only a staker challenges inside the window; anyone finalizes after it", () => {
+    const m = market({ status: "resolved", outcome: "yes", resolved_at: String(T), challenge_window: String(HOUR) });
+    assert.deepEqual(act(m, ALICE, T + HOUR, noStaker), ["challenge"]);
+    assert.deepEqual(act(m, ALICE, T + HOUR, yesStaker), ["challenge"]); // either side may challenge
+    assert.deepEqual(act(m, OUTSIDER, T + HOUR), []);
+    assert.deepEqual(act(m, CREATOR, T + HOUR), []);
+    assert.deepEqual(act(m, OUTSIDER, T + HOUR + 1), ["finalize"]);
+    assert.deepEqual(act(m, ALICE, T + HOUR + 1, noStaker), ["finalize"]);
   });
 
-  it("resolve_stale_dispute only after 24h, for any connected account", () => {
-    const d = market({ status: "disputed", challenge_deadline: String(T) });
-    assert.ok(!has(d, BOB, T + DAY - 1).includes("resolve_stale_dispute"));
-    assert.ok(has(d, BOB, T + DAY).includes("resolve_stale_dispute"));
-    assert.ok(!has(d, null, T + DAY).includes("resolve_stale_dispute"));
-  });
-});
-
-describe("claim is for winners who have not claimed", () => {
-  const finalized = market({ status: "finalized", outcome: "yes" });
-
-  it("offers it to a winning staker", () => {
-    assert.deepEqual(has(finalized, ALICE, T, position({ yesStake: ONE })), ["claim"]);
+  it("disputed: anyone connected can resolve; the stale settlement appears only when stale", () => {
+    const m = market({ status: "disputed", outcome: "yes", resolved_at: String(T), disputed_at: String(T + 10), stale_after: String(2 * HOUR) });
+    assert.deepEqual(act(m, OUTSIDER, T + 20), ["resolve_dispute"]);
+    assert.deepEqual(act(m, null, T + 20), []);
+    assert.deepEqual(act(m, OUTSIDER, T + 10 + 2 * HOUR - 1), ["resolve_dispute"]);
+    assert.deepEqual(act(m, OUTSIDER, T + 10 + 2 * HOUR), ["resolve_dispute", "resolve_stale_dispute"]);
   });
 
-  it("does not offer it to a loser, a non-staker, someone who already claimed, or a disconnected visitor", () => {
-    assert.ok(!has(finalized, ALICE, T, position({ noStake: ONE })).includes("claim"));
-    assert.ok(!has(finalized, BOB, T, position({})).includes("claim"));
-    assert.ok(!has(finalized, ALICE, T, position({ yesStake: ONE, claimed: true })).includes("claim"));
-    assert.ok(!has(finalized, null, T).includes("claim"));
+  it("finalized: only a winning, unclaimed staker claims", () => {
+    const m = market({ status: "finalized", outcome: "yes" });
+    assert.deepEqual(act(m, ALICE, T, yesStaker), ["claim"]);
+    assert.deepEqual(act(m, ALICE, T, noStaker), []);
+    assert.deepEqual(act(m, ALICE, T, { ...yesStaker, claimed: true }), []);
+    assert.deepEqual(act(m, OUTSIDER, T, EMPTY_POSITION), []);
+    assert.deepEqual(act(m, null, T, yesStaker), []);
   });
 
-  it("a staker on both sides can claim only because of the winning side", () => {
-    assert.ok(has(finalized, ALICE, T, position({ yesStake: ONE, noStake: ONE })).includes("claim"));
-    const noWins = market({ status: "finalized", outcome: "no" });
-    assert.ok(!has(noWins, ALICE, T, position({ yesStake: ONE })).includes("claim"));
+  it("an overturned outcome pays the other side", () => {
+    const m = market({ status: "finalized", outcome: "no" });
+    assert.deepEqual(act(m, ALICE, T, noStaker), ["claim"]);
+    assert.deepEqual(act(m, ALICE, T, yesStaker), []);
   });
 
-  it("offers nothing when the market has no outcome", () => {
-    const noOutcome = market({ status: "finalized", outcome: "" });
-    assert.ok(!has(noOutcome, ALICE, T, position({ yesStake: ONE })).includes("claim"));
-    assert.ok(!has(noOutcome, ALICE, T, position({ noStake: ONE })).includes("claim"));
+  it("reclaim: each side separately, once, only when recoverable", () => {
+    const stuck = market({});
+    const at = T + 4 * HOUR;
+    const both = pos({ yesStake: BigInt(5), noStake: BigInt(7) });
+    assert.deepEqual(act(stuck, ALICE, at - 1, both), ["resolve"]);
+    assert.deepEqual(act(stuck, ALICE, at, both), ["resolve", "reclaim_yes", "reclaim_no"]);
+    assert.deepEqual(act(stuck, ALICE, at, { ...both, reclaimedYes: true }), ["resolve", "reclaim_no"]);
+    assert.deepEqual(act(market({ status: "abandoned" }), ALICE, T, yesStaker), ["reclaim_yes"]);
   });
 });
 
-describe("reclaim is per side, for stakers only", () => {
-  // One-sided, so it can never resolve: the real reason a market gets stuck.
-  const stuck = market({ status: "open", lock_time: String(T - 2 * DAY), resolve_after: String(T - DAY), total_no_pool: "0" });
-
-  it("offers each side the wallet staked on", () => {
-    assert.deepEqual(has(stuck, ALICE, T, position({ yesStake: ONE })), ["reclaim_yes"]);
-    assert.deepEqual(has(stuck, ALICE, T, position({ noStake: ONE })), ["reclaim_no"]);
-    assert.deepEqual(has(stuck, ALICE, T, position({ yesStake: ONE, noStake: ONE })), ["reclaim_yes", "reclaim_no"]);
+describe("wording and write confirmation", () => {
+  it("the stale dispute note says the outcome stands and the bond goes to the winners", () => {
+    const d = market({ status: "disputed", disputed_at: String(T), stale_after: String(2 * HOUR) });
+    const note = recoveryNote(d, T + 2 * HOUR);
+    assert.match(note ?? "", /outcome stands/);
+    assert.match(note ?? "", /bond goes to the winners/);
+    assert.equal(recoveryNote(d, T + 1), null);
   });
-
-  it("hides a side that was already reclaimed", () => {
-    const yesDone = position({ yesStake: ONE, noStake: ONE, reclaimedYes: true });
-    assert.deepEqual(has(stuck, ALICE, T, yesDone), ["reclaim_no"]);
-    const noDone = position({ yesStake: ONE, noStake: ONE, reclaimedNo: true });
-    assert.deepEqual(has(stuck, ALICE, T, noDone), ["reclaim_yes"]);
-    const bothDone = position({ yesStake: ONE, noStake: ONE, reclaimedYes: true, reclaimedNo: true });
-    assert.deepEqual(has(stuck, ALICE, T, bothDone), []);
+  it("each write has the status it must read back", () => {
+    assert.ok(expectedStatus("resolve")!(market({ status: "resolved" })));
+    assert.ok(!expectedStatus("resolve")!(market({ status: "open" })));
+    assert.ok(expectedStatus("challenge")!(market({ status: "disputed" })));
+    assert.ok(!expectedStatus("resolve_dispute")!(market({ status: "disputed" })));
+    assert.ok(expectedStatus("resolve_stale_dispute")!(market({ status: "finalized" })));
+    assert.equal(expectedStatus("stake"), null); // confirmed against the wallet's own stake instead
+    assert.equal(expectedStatus("claim"), null);
   });
-
-  it("offers nothing to someone with no stake, or before the 24h window", () => {
-    assert.deepEqual(has(stuck, BOB, T, position({})), []);
-    const early = market({ status: "open", lock_time: String(T - 2 * DAY), resolve_after: String(T - DAY + 1), total_no_pool: "0" });
-    assert.ok(!has(early, ALICE, T, position({ yesStake: ONE })).includes("reclaim_yes"));
-  });
-
-  it("works on an abandoned market for a staker who has not reclaimed yet", () => {
-    const ab = market({ status: "abandoned" });
-    assert.deepEqual(has(ab, ALICE, T, position({ noStake: ONE })), ["reclaim_no"]);
-  });
-
-  it("offers nothing on a settled market", () => {
-    for (const status of ["resolved", "finalized"] as const) {
-      const m = market({ status, outcome: "yes", resolve_after: String(T - 100 * DAY), challenge_deadline: String(T - 100 * DAY) });
-      const acts = has(m, ALICE, T, position({ noStake: ONE, claimed: true }));
-      assert.ok(!acts.includes("reclaim_no"), status);
-    }
-  });
-});
-
-describe("recoveryNote describes what the contract really does", () => {
-  it("says a stuck dispute settles at the original outcome and is not a refund", () => {
-    const note = recoveryNote(market({ status: "disputed", challenge_deadline: String(T) }), T + DAY);
-    assert.match(note ?? "", /original outcome/i);
-    assert.match(note ?? "", /not a refund/i);
-  });
-
-  it("says a stuck open market returns each staker's own stake", () => {
-    const note = recoveryNote(market({ status: "open", resolve_after: String(T - DAY) }), T);
-    assert.match(note ?? "", /original stake/i);
-  });
-
-  it("says nothing on a healthy market", () => {
-    assert.equal(recoveryNote(market({}), T), null);
-    assert.equal(recoveryNote(market({ status: "disputed", challenge_deadline: String(T) }), T + 5), null);
+  it("only fund-moving actions wait for finality", () => {
+    assert.ok(movesFunds("claim") && movesFunds("reclaim_yes") && movesFunds("reclaim_no") && movesFunds("resolve_dispute"));
+    assert.ok(!movesFunds("stake") && !movesFunds("resolve") && !movesFunds("create"));
   });
 });

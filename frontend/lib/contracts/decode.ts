@@ -14,23 +14,31 @@ function toPlainObject(raw: any): Record<string, any> {
   return obj;
 }
 
+const s = (v: unknown, fallback = "0") => String(v ?? fallback);
+
 export function decodeMarket(raw: any): Market {
   const obj = toPlainObject(raw);
   return {
-    creator: String(obj.creator ?? ""),
-    question: String(obj.question ?? ""),
-    verification_url: String(obj.verification_url ?? ""),
-    yes_marker: String(obj.yes_marker ?? ""),
-    no_marker: String(obj.no_marker ?? ""),
-    lock_time: String(obj.lock_time ?? "0"),
-    resolve_after: String(obj.resolve_after ?? "0"),
-    status: String(obj.status ?? "open") as Market["status"],
-    outcome: String(obj.outcome ?? "") as Market["outcome"],
-    resolved_at: String(obj.resolved_at ?? "0"),
-    challenge_deadline: String(obj.challenge_deadline ?? "0"),
-    dispute_reason: String(obj.dispute_reason ?? ""),
-    resolution_note: String(obj.resolution_note ?? ""),
-    total_yes_pool: String(obj.total_yes_pool ?? "0"),
-    total_no_pool: String(obj.total_no_pool ?? "0"),
+    creator: s(obj.creator, ""),
+    question: s(obj.question, ""),
+    verification_url: s(obj.verification_url, ""),
+    yes_marker: s(obj.yes_marker, ""),
+    no_marker: s(obj.no_marker, ""),
+    lock_time: s(obj.lock_time),
+    resolve_after: s(obj.resolve_after),
+    challenge_window: s(obj.challenge_window),
+    stale_after: s(obj.stale_after),
+    status: s(obj.status, "open") as Market["status"],
+    outcome: s(obj.outcome, "") as Market["outcome"],
+    resolved_at: s(obj.resolved_at),
+    disputed_at: s(obj.disputed_at),
+    bond: s(obj.bond),
+    bonus: s(obj.bonus),
+    evidence_excerpt: s(obj.evidence_excerpt, ""),
+    evidence_digest: s(obj.evidence_digest, ""),
+    dispute_reason: s(obj.dispute_reason, ""),
+    resolution_note: s(obj.resolution_note, ""),
+    total_yes_pool: s(obj.total_yes_pool),
+    total_no_pool: s(obj.total_no_pool),
   };
 }

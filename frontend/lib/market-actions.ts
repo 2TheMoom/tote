@@ -1,7 +1,5 @@
 import type { Market } from "./contracts/types.ts";
-
-/** Mirrors RECOVERY_TIMEOUT_SECONDS in contracts/tote.py. */
-export const RECOVERY_TIMEOUT_SECONDS = 86400;
+import { requiredBond } from "./limits.ts";
 
 export type Side = "yes" | "no";
 
@@ -9,6 +7,7 @@ export type Side = "yes" | "no";
 export interface Position {
   yesStake: bigint;
   noStake: bigint;
+  /** A claim for this wallet has been scheduled (its payout record exists). */
   claimed: boolean;
   reclaimedYes: boolean;
   reclaimedNo: boolean;
@@ -46,29 +45,40 @@ function sameAddr(a?: string | null, b?: string | null): boolean {
   return !!a && !!b && a.toLowerCase() === b.toLowerCase();
 }
 
-/** challenge() is allowed up to and including challenge_deadline. */
+/** The last second a challenge is accepted: resolved_at + challenge_window. */
+export function challengeDeadline(m: Market): number {
+  return Number(m.resolved_at) > 0 ? Number(m.resolved_at) + Number(m.challenge_window) : 0;
+}
+
+/** When a stuck dispute can be settled: disputed_at + stale_after. */
+export function disputeStaleAt(m: Market): number {
+  return m.status === "disputed" ? Number(m.disputed_at) + Number(m.stale_after) : 0;
+}
+
+/** challenge() is allowed up to and including the deadline. */
 export function challengeOpen(m: Market, now: number): boolean {
-  return m.status === "resolved" && now <= Number(m.challenge_deadline);
+  return m.status === "resolved" && now <= challengeDeadline(m);
 }
 
-/** finalize() is allowed strictly after challenge_deadline. */
+/** finalize() is allowed strictly after the deadline. */
 export function readyToFinalize(m: Market, now: number): boolean {
-  return m.status === "resolved" && now > Number(m.challenge_deadline);
+  return m.status === "resolved" && now > challengeDeadline(m);
 }
 
-/** resolve_stale_dispute(): a dispute 24h past challenge_deadline. */
+/** resolve_stale_dispute(): a dispute stale_after past disputed_at. */
 export function disputeIsStale(m: Market, now: number): boolean {
-  return m.status === "disputed" && now >= Number(m.challenge_deadline) + RECOVERY_TIMEOUT_SECONDS;
+  return m.status === "disputed" && now >= disputeStaleAt(m);
 }
 
-/**
- * reclaim_stake(): a market stuck open 24h past resolve_after, or one that
- * has already been marked abandoned by an earlier reclaim. A stuck dispute is
- * NOT reclaimable here; it goes through resolve_stale_dispute().
- */
+/** reclaim_stake(): a market stuck open stale_after past resolve_after, or one already abandoned. */
 export function stakesReclaimable(m: Market, now: number): boolean {
   if (m.status === "abandoned") return true;
-  return m.status === "open" && now >= Number(m.resolve_after) + RECOVERY_TIMEOUT_SECONDS;
+  return m.status === "open" && now >= Number(m.resolve_after) + Number(m.stale_after);
+}
+
+/** What a challenge must post: 5% of every stake in the market, at least 1 wei. */
+export function bondFor(m: Market): bigint {
+  return requiredBond(BigInt(m.total_yes_pool || "0") + BigInt(m.total_no_pool || "0"));
 }
 
 /**
@@ -76,7 +86,7 @@ export function stakesReclaimable(m: Market, now: number): boolean {
  * contract's rules:
  *  - stake: anyone but the creator, before lock_time
  *  - resolve, finalize, resolve_dispute, resolve_stale_dispute: permissionless
- *  - challenge: a staker in this market, up to challenge_deadline
+ *  - challenge: a staker in this market, up to the deadline, with a bond
  *  - claim: a wallet with a winning stake that has not claimed
  *  - reclaim: a wallet with a stake on that side that has not reclaimed it
  */
@@ -108,16 +118,36 @@ export function availableActions(m: Market, ctx: ActionContext): MarketAction[] 
   return actions;
 }
 
-/** Short notes explaining the two recovery paths, for the market panel. */
+/** Short notes explaining the recovery paths, for the market panel. */
 export function recoveryNote(m: Market, now: number): string | null {
   if (disputeIsStale(m, now)) {
-    return "Adjudication never reached a verdict in 24 hours. Anyone can settle the market at the original outcome. This is not a refund.";
+    return "Nobody could adjudicate this dispute in time. Anyone can settle it: the recorded outcome stands and the challenger's bond goes to the winners. This is not a refund.";
   }
   if (m.status === "open" && stakesReclaimable(m, now)) {
-    return "This market never resolved in 24 hours. Each staker can take back their own original stake. Anyone with a stake can do it.";
+    return "This market never resolved in time. Each staker can take back their own original stake.";
   }
   if (m.status === "abandoned") {
     return "This market was abandoned. Each staker can take back their own original stake.";
   }
   return null;
+}
+
+/** Status the market must read back as for a write to count as done. */
+export function expectedStatus(action: MarketAction | "create"): ((m: Market) => boolean) | null {
+  switch (action) {
+    case "create": return (m) => m.status === "open";
+    case "resolve": return (m) => m.status === "resolved";
+    case "challenge": return (m) => m.status === "disputed";
+    case "finalize": return (m) => m.status === "finalized";
+    // an inconclusive verdict reverts, so a dispute that is still "disputed" means nothing changed
+    case "resolve_dispute": return (m) => m.status === "finalized";
+    case "resolve_stale_dispute": return (m) => m.status === "finalized";
+    // stake, claim and reclaim are confirmed against the wallet's own position instead
+    default: return null;
+  }
+}
+
+/** True for actions whose transfer only lands when the transaction finalizes. */
+export function movesFunds(action: MarketAction | "create"): boolean {
+  return action === "claim" || action === "reclaim_yes" || action === "reclaim_no" || action === "resolve_dispute";
 }

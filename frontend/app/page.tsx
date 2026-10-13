@@ -29,7 +29,33 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { Market } from "@/lib/contracts/types";
-import { availableActions, challengeOpen as isChallengeOpen, recoveryNote } from "@/lib/market-actions";
+import { availableActions, bondFor, challengeDeadline, challengeOpen as isChallengeOpen, disputeStaleAt, recoveryNote } from "@/lib/market-actions";
+import { getTxExplorerUrl } from "@/lib/genlayer/chains";
+import { MIN_STALE, MIN_WINDOW, markerProblem, normalizeLine, urlProblem } from "@/lib/limits";
+import type { WriteProgress } from "@/lib/hooks/useTote";
+
+const WINDOW_CHOICES = [
+  { label: "1 hour", seconds: 3600 },
+  { label: "6 hours", seconds: 6 * 3600 },
+  { label: "24 hours", seconds: 86400 },
+  { label: "3 days", seconds: 3 * 86400 },
+  { label: "7 days", seconds: 7 * 86400 },
+].filter((c) => c.seconds >= MIN_WINDOW);
+const STALE_CHOICES = [
+  { label: "2 hours", seconds: 7200 },
+  { label: "12 hours", seconds: 12 * 3600 },
+  { label: "24 hours", seconds: 86400 },
+  { label: "3 days", seconds: 3 * 86400 },
+  { label: "7 days", seconds: 7 * 86400 },
+].filter((c) => c.seconds >= MIN_STALE);
+
+function formatSpan(seconds: string): string {
+  const n = Number(seconds);
+  if (!n) return "—";
+  if (n % 86400 === 0) return `${n / 86400} day${n === 86400 ? "" : "s"}`;
+  if (n % 3600 === 0) return `${n / 3600} hour${n === 3600 ? "" : "s"}`;
+  return `${Math.round(n / 60)} min`;
+}
 
 function shortAddr(hex: string): string {
   if (!hex) return "—";
@@ -98,8 +124,7 @@ function statusLabel(m: Market, now: number): string {
       return "Ready to resolve";
     }
     case "resolved": {
-      const closes = Number(m.challenge_deadline);
-      return now < closes ? `Resolved: ${m.outcome?.toUpperCase()} · Challenge window` : `Resolved: ${m.outcome?.toUpperCase()} · Ready to finalize`;
+      return isChallengeOpen(m, now) ? `Resolved: ${m.outcome?.toUpperCase()} · Challenge window` : `Resolved: ${m.outcome?.toUpperCase()} · Ready to finalize`;
     }
     case "disputed": return "Disputed · Awaiting resolution";
     case "finalized": return `Finalized: ${m.outcome?.toUpperCase()}`;
@@ -114,22 +139,98 @@ function statusPillClass(status: string): string {
   return "status-pill";
 }
 
+function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <Label className="font-mono text-xs text-ink-faint">{label}</Label>
+      {children}
+      {hint && <div className="font-mono text-[0.68rem] mt-1 text-ink-faint">{hint}</div>}
+    </div>
+  );
+}
+
+function SelectField({ id, value, onChange, choices }: { id: string; value: number; onChange: (n: number) => void; choices: { label: string; seconds: number }[] }) {
+  return (
+    <select
+      id={id} value={value} onChange={(e) => onChange(Number(e.target.value))}
+      className="mt-1 w-full h-9 px-2 text-sm bg-transparent border border-input rounded-lg outline-none focus-visible:border-ring font-mono"
+      style={{ color: "var(--foreground)" }}
+    >
+      {choices.map((c) => <option key={c.seconds} value={c.seconds} style={{ background: "var(--card)" }}>{c.label}</option>)}
+    </select>
+  );
+}
+
+const STAGES: { key: WriteProgress["stage"]; label: string }[] = [
+  { key: "signing", label: "Sign in wallet" },
+  { key: "submitted", label: "Sent" },
+  { key: "accepted", label: "Accepted by validators" },
+  { key: "confirmed", label: "State confirmed" },
+];
+
+/** Shows how far a write has got. "Accepted" is not "done": done is the contract state read back, and money moves on finalization. */
+function TxProgress({ progress, pending }: { progress: WriteProgress | null; pending: boolean }) {
+  if (!progress) return null;
+  const order = ["signing", "submitted", "accepted", "confirmed", "finalized"];
+  const at = order.indexOf(progress.stage);
+  return (
+    <div className="mt-4 font-mono text-[0.7rem] text-ink-faint">
+      <div className="flex flex-wrap gap-x-4 gap-y-1">
+        {STAGES.map((st) => {
+          const i = order.indexOf(st.key);
+          const done = at > i || (at === i && st.key === "confirmed");
+          const current = at === i && !done;
+          return (
+            <span key={st.key} style={{ color: done ? "var(--emerald-bright)" : current && pending ? "var(--foreground)" : undefined }}>
+              {done ? "✓" : current && pending ? "…" : "·"} {st.label}
+            </span>
+          );
+        })}
+        {progress.movesFunds && (
+          <span style={{ color: progress.stage === "finalized" ? "var(--emerald-bright)" : "var(--foreground)" }}>
+            {progress.stage === "finalized" ? "✓ Finalized, funds delivered" : "… Waiting for finality (funds move then, about 30 min)"}
+          </span>
+        )}
+      </div>
+      {progress.txHash && (
+        <a className="break-all underline" style={{ color: "var(--emerald-bright)" }} href={getTxExplorerUrl(progress.txHash)} target="_blank" rel="noreferrer">
+          {progress.txHash.slice(0, 14)}…
+        </a>
+      )}
+    </div>
+  );
+}
+
 function CreateMarketDialog() {
   const { address } = useWallet();
   const create = useCreateMarket();
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({ id: "", question: "", url: "", yesMarker: "", noMarker: "", lockTime: "", resolveAfter: "" });
+  const blank = { id: "", question: "", url: "", yesMarker: "", noMarker: "", lockTime: "", resolveAfter: "" };
+  const [form, setForm] = useState(blank);
+  const [windowSeconds, setWindowSeconds] = useState(WINDOW_CHOICES[0].seconds);
+  const [staleSeconds, setStaleSeconds] = useState(STALE_CHOICES[0].seconds);
 
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
     setForm((f) => ({ ...f, [k]: e.target.value }));
 
+  const problems = [
+    form.url ? urlProblem(form.url) : null,
+    form.yesMarker ? markerProblem(form.yesMarker, "Yes marker") : null,
+    form.noMarker ? markerProblem(form.noMarker, "No marker") : null,
+    form.yesMarker && form.noMarker && normalizeLine(form.yesMarker) === normalizeLine(form.noMarker) ? "The yes and no markers must differ." : null,
+  ].filter(Boolean) as string[];
+  const complete = !!(form.id && form.question && form.url && form.yesMarker && form.noMarker && form.lockTime && form.resolveAfter);
+
   const handleSubmit = () => {
-    if (!form.id || !form.question || !form.url || !form.yesMarker || !form.noMarker || !form.lockTime || !form.resolveAfter) return;
+    if (!complete || problems.length > 0) return;
     const lockTs = Math.floor(new Date(form.lockTime).getTime() / 1000);
     const resolveTs = Math.floor(new Date(form.resolveAfter).getTime() / 1000);
     create.run(
-      { id: form.id, question: form.question, url: form.url, yesMarker: form.yesMarker, noMarker: form.noMarker, lockTime: lockTs, resolveAfter: resolveTs },
-      { onSuccess: () => { setOpen(false); setForm({ id: "", question: "", url: "", yesMarker: "", noMarker: "", lockTime: "", resolveAfter: "" }); } } as any
+      {
+        id: form.id, question: form.question, url: form.url, yesMarker: form.yesMarker, noMarker: form.noMarker,
+        lockTime: lockTs, resolveAfter: resolveTs, challengeWindow: windowSeconds, staleAfter: staleSeconds,
+      },
+      { onSuccess: () => { setOpen(false); setForm(blank); } } as any
     );
   };
 
@@ -138,49 +239,58 @@ function CreateMarketDialog() {
       <DialogTrigger asChild>
         <button className="btn-tote primary" disabled={!address}>Open a Market</button>
       </DialogTrigger>
-      <DialogContent className="!bg-card !border-border-hi sm:!max-w-lg">
+      <DialogContent className="!bg-card !border-border-hi sm:!max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="font-display font-semibold">New Market</DialogTitle>
         </DialogHeader>
         <div className="flex flex-col gap-3.5 mt-1">
-          <div>
-            <Label className="font-mono text-xs text-ink-faint">Market ID</Label>
-            <Input value={form.id} onChange={set("id")} placeholder="tote-015" className="mt-1 font-mono" />
+          <Field label="Market ID">
+            <Input id="tote-id" value={form.id} onChange={set("id")} placeholder="tote-015" className="mt-1 font-mono" />
+          </Field>
+          <Field label="Question" hint="Disputes judge against exactly this text.">
+            <Input id="tote-question" value={form.question} onChange={set("question")} placeholder="Will BTC close above $90,000 on Sep 30?" className="mt-1" />
+          </Field>
+          <Field label="Verification URL" hint="A public https page everyone can see. Validators fetch it themselves.">
+            <Input id="tote-url" value={form.url} onChange={set("url")} placeholder="https://…" className="mt-1 font-mono" />
+          </Field>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Field label="Yes line (a whole line)">
+              <Input id="tote-yes" value={form.yesMarker} onChange={set("yesMarker")} placeholder="BTC daily close was above 90000 USD" className="mt-1 font-mono" />
+            </Field>
+            <Field label="No line (a whole line)">
+              <Input id="tote-no" value={form.noMarker} onChange={set("noMarker")} placeholder="BTC daily close was at or below 90000 USD" className="mt-1 font-mono" />
+            </Field>
           </div>
-          <div>
-            <Label className="font-mono text-xs text-ink-faint">Question</Label>
-            <Input value={form.question} onChange={set("question")} placeholder="Will BTC close above $90,000 on Sep 30?" className="mt-1" />
-          </div>
-          <div>
-            <Label className="font-mono text-xs text-ink-faint">Verification URL</Label>
-            <Input value={form.url} onChange={set("url")} placeholder="https://…" className="mt-1 font-mono" />
+          <div className="font-mono text-[0.68rem] text-ink-faint">
+            Each must be an entire line of the page, not a phrase inside one. Negated, quoted or partial text never counts.
+            If the page shows both lines, or neither, the market does not resolve. Include something specific such as a date or figure.
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <div>
-              <Label className="font-mono text-xs text-ink-faint">Yes marker</Label>
-              <Input value={form.yesMarker} onChange={set("yesMarker")} placeholder="text proving YES" className="mt-1 font-mono" />
-            </div>
-            <div>
-              <Label className="font-mono text-xs text-ink-faint">No marker</Label>
-              <Input value={form.noMarker} onChange={set("noMarker")} placeholder="text proving NO" className="mt-1 font-mono" />
-            </div>
+            <Field label="Staking closes">
+              <Input id="tote-lock" type="datetime-local" value={form.lockTime} onChange={set("lockTime")} className="mt-1 font-mono" />
+            </Field>
+            <Field label="Resolves after">
+              <Input id="tote-resolve" type="datetime-local" value={form.resolveAfter} onChange={set("resolveAfter")} className="mt-1 font-mono" />
+            </Field>
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <div>
-              <Label className="font-mono text-xs text-ink-faint">Staking closes</Label>
-              <Input type="datetime-local" value={form.lockTime} onChange={set("lockTime")} className="mt-1 font-mono" />
-            </div>
-            <div>
-              <Label className="font-mono text-xs text-ink-faint">Resolves after</Label>
-              <Input type="datetime-local" value={form.resolveAfter} onChange={set("resolveAfter")} className="mt-1 font-mono" />
-            </div>
+            <Field label="Challenge Window" hint="Kept above Bradbury's ~30 min finality.">
+              <SelectField id="tote-window" value={windowSeconds} onChange={setWindowSeconds} choices={WINDOW_CHOICES} />
+            </Field>
+            <Field label="Recover After" hint="How long a stuck market or dispute waits before recovery.">
+              <SelectField id="tote-stale" value={staleSeconds} onChange={setStaleSeconds} choices={STALE_CHOICES} />
+            </Field>
           </div>
+          {problems.map((p) => (
+            <div key={p} className="font-mono text-xs" style={{ color: "var(--burgundy-bright)" }}>{p}</div>
+          ))}
         </div>
         <DialogFooter className="mt-4">
-          <button className="btn-tote primary block" onClick={handleSubmit} disabled={create.isPending}>
+          <button className="btn-tote primary block" onClick={handleSubmit} disabled={create.isPending || !complete || problems.length > 0}>
             {create.isPending ? "Opening…" : "Open Market"}
           </button>
         </DialogFooter>
+        <TxProgress progress={create.progress} pending={create.isPending} />
       </DialogContent>
     </Dialog>
   );
@@ -190,6 +300,7 @@ function StakeDialog({ marketId, side }: { marketId: string; side: "yes" | "no" 
   const stakeAction = useStake();
   const [open, setOpen] = useState(false);
   const [amount, setAmount] = useState("");
+  const wei = genToWei(amount);
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -202,26 +313,29 @@ function StakeDialog({ marketId, side }: { marketId: string; side: "yes" | "no" 
         </DialogHeader>
         <div className="mt-1">
           <Label className="font-mono text-xs text-ink-faint">Amount (GEN)</Label>
-          <Input value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="1.0" className="mt-1 font-mono" />
+          <Input id="tote-stake-amount" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="1.0" className="mt-1 font-mono" />
         </div>
         <DialogFooter className="mt-4">
           <button
             className={`btn-tote ${side} block`}
-            disabled={!amount || stakeAction.isPending}
-            onClick={() => stakeAction.run({ id: marketId, side, amountWei: genToWei(amount) }, { onSuccess: () => { setOpen(false); setAmount(""); } } as any)}
+            disabled={wei <= BigInt(0) || stakeAction.isPending}
+            onClick={() => stakeAction.run({ id: marketId, side, amountWei: wei }, { onSuccess: () => { setOpen(false); setAmount(""); } } as any)}
           >
             {stakeAction.isPending ? "Staking…" : `Confirm Stake`}
           </button>
         </DialogFooter>
+        <TxProgress progress={stakeAction.progress} pending={stakeAction.isPending} />
       </DialogContent>
     </Dialog>
   );
 }
 
-function ChallengeDialog({ marketId }: { marketId: string }) {
+function ChallengeDialog({ market, marketId }: { market: Market; marketId: string }) {
   const challenge = useChallenge();
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState("");
+  const bond = bondFor(market);
+  const short = reason.length > 0 && reason.length < 20;
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -235,21 +349,28 @@ function ChallengeDialog({ marketId }: { marketId: string }) {
         <div className="mt-1">
           <Label className="font-mono text-xs text-ink-faint">Why is the recorded outcome wrong?</Label>
           <textarea
-            value={reason} onChange={(e) => setReason(e.target.value)}
+            id="tote-challenge-reason" value={reason} onChange={(e) => setReason(e.target.value)}
             rows={4}
             className="mt-1 w-full px-3 py-2 text-sm bg-transparent border border-input rounded-lg outline-none focus-visible:border-ring"
             style={{ color: "var(--foreground)" }}
           />
+          {short && <div className="font-mono text-xs mt-1" style={{ color: "var(--burgundy-bright)" }}>At least 20 characters, so the reviewers have something to weigh.</div>}
+          <div className="font-mono text-xs mt-3 text-ink-faint">
+            Filing posts a bond of exactly <b style={{ color: "var(--emerald-bright)" }}>{formatGen(bond.toString())} GEN</b> (5% of all stakes).
+            If the objection is upheld the outcome flips and your bond is returned. If it fails, the bond goes to the winners.
+            If nobody can adjudicate it in time the recorded outcome stands and the bond goes to the winners too.
+          </div>
         </div>
         <DialogFooter className="mt-4">
           <button
             className="btn-tote ghost danger block"
-            disabled={!reason || challenge.isPending}
-            onClick={() => challenge.run({ id: marketId, reason }, { onSuccess: () => { setOpen(false); setReason(""); } } as any)}
+            disabled={reason.length < 20 || challenge.isPending}
+            onClick={() => challenge.run({ id: marketId, reason, bondWei: bond }, { onSuccess: () => { setOpen(false); setReason(""); } } as any)}
           >
-            {challenge.isPending ? "Filing…" : "File Challenge"}
+            {challenge.isPending ? "Filing…" : `File Challenge (bond ${formatGen(bond.toString())} GEN)`}
           </button>
         </DialogFooter>
+        <TxProgress progress={challenge.progress} pending={challenge.isPending} />
       </DialogContent>
     </Dialog>
   );
@@ -277,12 +398,14 @@ function MarketHero({ id }: { id: string }) {
   const isCreator = sameAddr(address, m.creator);
   const yesPct = splitPercent(m);
   const lockTime = Number(m.lock_time);
-  const resolveAfter = Number(m.resolve_after);
-  const challengeDeadline = Number(m.challenge_deadline);
+  const deadline = challengeDeadline(m);
   const stakingOpen = m.status === "open" && now < lockTime;
   const challengeOpen = isChallengeOpen(m, now);
   const actions = availableActions(m, { address, now, position });
   const note = recoveryNote(m, now);
+  const all = [resolveAction, resolveDisputeAction, staleDisputeAction, finalizeAction, claimAction, reclaimAction];
+  const active = all.find((a) => a.progress);
+  const staleAt = disputeStaleAt(m);
 
   return (
     <div
@@ -315,10 +438,20 @@ function MarketHero({ id }: { id: string }) {
       <div className="grid grid-cols-1 sm:grid-cols-[1.2fr_1fr] gap-8 mt-1">
         <div>
           <div className="eyebrow mb-2">Resolution Criteria</div>
-          <p className="field-note">
-            Validators independently fetch <b>{m.verification_url}</b> and check which outcome the page confirms —
-            a marker for <b style={{ color: "var(--emerald-bright)" }}>{m.yes_marker}</b> resolves Yes, a marker for{" "}
-            <b style={{ color: "var(--burgundy-bright)" }}>{m.no_marker}</b> resolves No. Neither present yet reverts cleanly and can be retried.
+          <p className="field-note break-words">
+            Validators independently fetch <b className="break-all">{m.verification_url}</b> and need exactly one of these as a whole line:{" "}
+            <b style={{ color: "var(--emerald-bright)" }}>&quot;{m.yes_marker}&quot;</b> resolves Yes,{" "}
+            <b style={{ color: "var(--burgundy-bright)" }}>&quot;{m.no_marker}&quot;</b> resolves No. A line that only contains,
+            negates or quotes one does not count, and a page with both or neither does not resolve the market.
+            {m.evidence_excerpt && (
+              <>
+                <br /><br />
+                <span style={{ color: "var(--emerald-bright)" }}>Committed evidence:</span> &quot;{m.evidence_excerpt}&quot;
+                <br />
+                <span className="break-all text-ink-faint">sha256 {m.evidence_digest}</span>
+                <br />A dispute is judged against this recorded excerpt and the page as it reads now, not the page alone.
+              </>
+            )}
             {m.dispute_reason && (<><br /><br /><span style={{ color: "var(--burgundy-bright)" }}>Dispute:</span> {m.dispute_reason}</>)}
             {m.resolution_note && (<><br /><br /><span style={{ color: "var(--emerald-bright)" }}>Resolution:</span> {m.resolution_note}</>)}
           </p>
@@ -328,8 +461,12 @@ function MarketHero({ id }: { id: string }) {
           <div className="flex flex-col gap-3">
             {stakingOpen && <div className="kv-row"><span className="k">Staking closes</span><span className="v emerald tabular">T−{formatCountdown(lockTime - now)}</span></div>}
             <div className="kv-row"><span className="k">Resolves after</span><span className="v">{formatDate(m.resolve_after)}</span></div>
-            {challengeOpen && <div className="kv-row"><span className="k">Challenge closes</span><span className="v emerald tabular">T−{formatCountdown(challengeDeadline - now)}</span></div>}
+            <div className="kv-row"><span className="k">Challenge window</span><span className="v">{formatSpan(m.challenge_window)}</span></div>
+            <div className="kv-row"><span className="k">Recover after</span><span className="v">{formatSpan(m.stale_after)}</span></div>
+            {challengeOpen && <div className="kv-row"><span className="k">Challenge closes</span><span className="v emerald tabular">T−{formatCountdown(deadline - now)}</span></div>}
+            {staleAt > 0 && now < staleAt && <div className="kv-row"><span className="k">Dispute recoverable</span><span className="v">{formatDate(String(staleAt))}</span></div>}
             <div className="kv-row"><span className="k">Total pool</span><span className="v emerald">{formatGen((BigInt(m.total_yes_pool) + BigInt(m.total_no_pool)).toString())} GEN</span></div>
+            <div className="kv-row"><span className="k">Challenge bond</span><span className="v">{formatGen((Number(m.bond) > 0 ? BigInt(m.bond) : bondFor(m)).toString())} GEN</span></div>
           </div>
         </div>
       </div>
@@ -342,7 +479,7 @@ function MarketHero({ id }: { id: string }) {
             {resolveAction.isPending ? "Resolving…" : "Resolve Market"}
           </button>
         )}
-        {actions.includes("challenge") && <ChallengeDialog marketId={id} />}
+        {actions.includes("challenge") && <ChallengeDialog market={m} marketId={id} />}
         {actions.includes("finalize") && (
           <button className="btn-tote primary" disabled={finalizeAction.isPending} onClick={() => finalizeAction.run({ id })}>
             {finalizeAction.isPending ? "Finalizing…" : "Finalize Market"}
@@ -375,6 +512,14 @@ function MarketHero({ id }: { id: string }) {
         )}
         {!address && <span className="font-mono text-xs self-center text-ink-faint">Connect your wallet above to act on this market.</span>}
       </div>
+
+      {active && <TxProgress progress={active.progress} pending={active.isPending} />}
+
+      {m.status === "disputed" && !note && (
+        <div className="mt-4 font-mono text-xs text-ink-faint">
+          Anyone can resolve this dispute. If the reviewers cannot reach a clear verdict nothing changes and it can be retried.
+        </div>
+      )}
 
       {note && (
         <div className="mt-4 flex items-start gap-2 font-mono text-xs" style={{ color: "var(--burgundy-bright)" }}>

@@ -2,12 +2,14 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
-import Tote from "../contracts/Tote";
+import Tote, { type CreateArgs, type WriteProgress } from "../contracts/Tote";
 import { getContractAddress, getStudioUrl } from "../genlayer/client";
 import { useWallet } from "../genlayer/wallet";
 import { success, error, configError } from "../utils/toast";
 import type { Market } from "../contracts/types";
 import { EMPTY_POSITION, type Position } from "../market-actions";
+
+export type { WriteProgress };
 
 export function useToteContract(): Tote | null {
   const { address } = useWallet();
@@ -36,18 +38,21 @@ export function useMarket(marketId: string) {
     queryKey: ["market", marketId],
     queryFn: () => (contract ? contract.getMarket(marketId) : Promise.resolve(null)),
     refetchOnWindowFocus: true,
+    refetchInterval: 20000,
     staleTime: 2000,
     enabled: !!contract && !!marketId,
   });
 }
 
-export function useAllMarketIds() {
+/** The newest market ids (one page from the end of the list, never the whole history). */
+export function useRecentMarketIds(limit = 20) {
   const contract = useToteContract();
 
   return useQuery<string[], Error>({
-    queryKey: ["marketIds"],
-    queryFn: () => (contract ? contract.getAllMarketIds() : Promise.resolve([])),
+    queryKey: ["marketIds", limit],
+    queryFn: () => (contract ? contract.getRecentMarketIds(limit) : Promise.resolve([])),
     refetchOnWindowFocus: true,
+    refetchInterval: 30000,
     staleTime: 2000,
     enabled: !!contract,
   });
@@ -55,7 +60,7 @@ export function useAllMarketIds() {
 
 export function useMarketList() {
   const contract = useToteContract();
-  const idsQuery = useAllMarketIds();
+  const idsQuery = useRecentMarketIds();
 
   const listQuery = useQuery<Array<{ id: string; market: Market }>, Error>({
     queryKey: ["marketList", idsQuery.data],
@@ -81,14 +86,7 @@ export function useMyPosition(marketId: string, wallet: string | null) {
     queryKey: ["position", marketId, wallet],
     queryFn: async () => {
       if (!contract || !wallet) return EMPTY_POSITION;
-      const [yesStake, noStake, claimed, reclaimedYes, reclaimedNo] = await Promise.all([
-        contract.getStake(marketId, "yes", wallet),
-        contract.getStake(marketId, "no", wallet),
-        contract.hasClaimed(marketId, wallet),
-        contract.hasReclaimed(marketId, "yes", wallet),
-        contract.hasReclaimed(marketId, "no", wallet),
-      ]);
-      return { yesStake, noStake, claimed, reclaimedYes, reclaimedNo };
+      return contract.getPosition(marketId, wallet);
     },
     refetchOnWindowFocus: true,
     staleTime: 2000,
@@ -96,9 +94,11 @@ export function useMyPosition(marketId: string, wallet: string | null) {
   });
 }
 
+type Runner<TArgs> = (contract: Tote, args: TArgs, wallet: string, onProgress: (p: WriteProgress) => void) => Promise<string>;
+
 function useWriteAction<TArgs>(
-  action: (contract: Tote, args: TArgs, feePreset: any, onSubmitted: (h: string) => void) => Promise<string>,
-  successMessage: { title: string; description: string },
+  action: Runner<TArgs>,
+  messages: { confirmed: { title: string; description: string }; finalized?: { title: string; description: string } },
   errorTitle: string,
   getMarketId: (args: TArgs) => string
 ) {
@@ -106,28 +106,39 @@ function useWriteAction<TArgs>(
   const { address } = useWallet();
   const queryClient = useQueryClient();
   const [isPending, setIsPending] = useState(false);
-  const [pendingTxHash, setPendingTxHash] = useState<string | null>(null);
+  const [progress, setProgress] = useState<WriteProgress | null>(null);
+
+  const refresh = (marketId: string) => {
+    queryClient.invalidateQueries({ queryKey: ["market", marketId] });
+    queryClient.invalidateQueries({ queryKey: ["marketIds"] });
+    queryClient.invalidateQueries({ queryKey: ["marketList"] });
+    queryClient.invalidateQueries({ queryKey: ["position", marketId] });
+  };
 
   const mutation = useMutation({
     mutationFn: async (args: TArgs) => {
       if (!contract) throw new Error("Contract not configured. Please set NEXT_PUBLIC_CONTRACT_ADDRESS in your .env file.");
       if (!address) throw new Error("Wallet not connected. Please connect your wallet first.");
       setIsPending(true);
-      setPendingTxHash(null);
-      return action(contract, args, undefined, setPendingTxHash);
+      setProgress(null);
+      const id = getMarketId(args);
+      return action(contract, args, address, (p) => {
+        setProgress(p);
+        if (p.stage === "finalized") {
+          refresh(id);
+          if (messages.finalized) success(messages.finalized.title, { description: messages.finalized.description });
+        }
+      });
     },
     onSuccess: (_data, args) => {
-      const marketId = getMarketId(args);
-      queryClient.invalidateQueries({ queryKey: ["market", marketId] });
-      queryClient.invalidateQueries({ queryKey: ["marketIds"] });
-      queryClient.invalidateQueries({ queryKey: ["marketList"] });
-      queryClient.invalidateQueries({ queryKey: ["position", marketId] });
+      refresh(getMarketId(args));
       setIsPending(false);
-      success(successMessage.title, { description: successMessage.description });
+      success(messages.confirmed.title, { description: messages.confirmed.description });
     },
     onError: (err: any) => {
       console.error(errorTitle, err);
       setIsPending(false);
+      setProgress(null);
       error(errorTitle, { description: err?.message || "Please try again." });
     },
   });
@@ -135,26 +146,18 @@ function useWriteAction<TArgs>(
   return {
     ...mutation,
     isPending,
-    pendingTxHash,
-    clearPendingTx: () => setPendingTxHash(null),
+    progress,
+    clearProgress: () => setProgress(null),
     run: mutation.mutate,
   };
 }
 
-export interface CreateMarketArgs {
-  id: string;
-  question: string;
-  url: string;
-  yesMarker: string;
-  noMarker: string;
-  lockTime: number;
-  resolveAfter: number;
-}
+const PAYS = "Funds are delivered when the transaction finalizes (about 30 minutes on Bradbury).";
 
 export function useCreateMarket() {
-  return useWriteAction<CreateMarketArgs>(
-    (c, a, fee, cb) => c.createMarket(a.id, a.question, a.url, a.yesMarker, a.noMarker, a.lockTime, a.resolveAfter, fee, cb),
-    { title: "Market opened", description: "Staking is now live." },
+  return useWriteAction<CreateArgs>(
+    (c, a, _w, onProgress) => c.createMarket(a, onProgress),
+    { confirmed: { title: "Market opened", description: "Staking is now live." } },
     "Failed to create market",
     (a) => a.id
   );
@@ -162,8 +165,8 @@ export function useCreateMarket() {
 
 export function useStake() {
   return useWriteAction<{ id: string; side: "yes" | "no"; amountWei: bigint }>(
-    (c, a, fee, cb) => c.stake(a.id, a.side, a.amountWei, fee, cb),
-    { title: "Staked", description: "Your position is live on-chain." },
+    (c, a, w, onProgress) => c.stake(a.id, a.side, a.amountWei, w, onProgress),
+    { confirmed: { title: "Staked", description: "Your position reads back on-chain." } },
     "Failed to stake",
     (a) => a.id
   );
@@ -171,17 +174,17 @@ export function useStake() {
 
 export function useResolve() {
   return useWriteAction<{ id: string }>(
-    (c, a, fee, cb) => c.resolve(a.id, fee, cb),
-    { title: "Resolved", description: "Validators confirmed the outcome." },
-    "Resolution failed",
+    (c, a, _w, onProgress) => c.resolve(a.id, onProgress),
+    { confirmed: { title: "Resolved", description: "Validators agreed on exactly one marker line. The excerpt and its hash are recorded." } },
+    "Resolution did not go through",
     (a) => a.id
   );
 }
 
 export function useChallenge() {
-  return useWriteAction<{ id: string; reason: string }>(
-    (c, a, fee, cb) => c.challenge(a.id, a.reason, fee, cb),
-    { title: "Challenge filed", description: "Escalated for reasoned review." },
+  return useWriteAction<{ id: string; reason: string; bondWei: bigint }>(
+    (c, a, _w, onProgress) => c.challenge(a.id, a.reason, a.bondWei, onProgress),
+    { confirmed: { title: "Challenge filed", description: "Your bond is held until the dispute is settled." } },
     "Failed to challenge",
     (a) => a.id
   );
@@ -189,8 +192,11 @@ export function useChallenge() {
 
 export function useResolveDispute() {
   return useWriteAction<{ id: string }>(
-    (c, a, fee, cb) => c.resolveDispute(a.id, fee, cb),
-    { title: "Dispute resolved", description: "Validators reached a verdict." },
+    (c, a, _w, onProgress) => c.resolveDispute(a.id, onProgress),
+    {
+      confirmed: { title: "Verdict recorded", description: "Claims are open once this finalizes. If the outcome was overturned the challenger's bond is returned." },
+      finalized: { title: "Dispute settled", description: "The transaction finalized." },
+    },
     "Failed to resolve dispute",
     (a) => a.id
   );
@@ -198,8 +204,8 @@ export function useResolveDispute() {
 
 export function useFinalize() {
   return useWriteAction<{ id: string }>(
-    (c, a, fee, cb) => c.finalize(a.id, fee, cb),
-    { title: "Finalized", description: "Claims are now open." },
+    (c, a, _w, onProgress) => c.finalize(a.id, onProgress),
+    { confirmed: { title: "Finalized", description: "Claims are now open." } },
     "Failed to finalize",
     (a) => a.id
   );
@@ -207,8 +213,11 @@ export function useFinalize() {
 
 export function useClaim() {
   return useWriteAction<{ id: string }>(
-    (c, a, fee, cb) => c.claim(a.id, fee, cb),
-    { title: "Claimed", description: "Payout recorded." },
+    (c, a, w, onProgress) => c.claim(a.id, w, onProgress),
+    {
+      confirmed: { title: "Claim recorded", description: PAYS },
+      finalized: { title: "Paid", description: "The transaction finalized and your winnings were delivered." },
+    },
     "Failed to claim",
     (a) => a.id
   );
@@ -216,8 +225,8 @@ export function useClaim() {
 
 export function useResolveStaleDispute() {
   return useWriteAction<{ id: string }>(
-    (c, a, fee, cb) => c.resolveStaleDispute(a.id, fee, cb),
-    { title: "Market settled", description: "The stuck dispute was settled at the original outcome." },
+    (c, a, _w, onProgress) => c.resolveStaleDispute(a.id, onProgress),
+    { confirmed: { title: "Market settled", description: "The recorded outcome stands and the challenger's bond goes to the winners." } },
     "Failed to settle the stuck dispute",
     (a) => a.id
   );
@@ -225,8 +234,11 @@ export function useResolveStaleDispute() {
 
 export function useReclaimStake() {
   return useWriteAction<{ id: string; side: "yes" | "no" }>(
-    (c, a, fee, cb) => c.reclaimStake(a.id, a.side, fee, cb),
-    { title: "Stake returned", description: "Your original stake is on its way back." },
+    (c, a, w, onProgress) => c.reclaimStake(a.id, a.side, w, onProgress),
+    {
+      confirmed: { title: "Reclaim recorded", description: PAYS },
+      finalized: { title: "Stake returned", description: "The transaction finalized and your stake was delivered." },
+    },
     "Failed to reclaim the stake",
     (a) => a.id
   );

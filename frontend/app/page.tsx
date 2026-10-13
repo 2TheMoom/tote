@@ -195,7 +195,7 @@ function TxProgress({ progress, pending }: { progress: WriteProgress | null; pen
   );
 }
 
-function CreateMarketDialog() {
+function CreateMarketDialog({ onCreated }: { onCreated: (id: string) => void }) {
   const { address } = useWallet();
   const create = useCreateMarket();
   const [open, setOpen] = useState(false);
@@ -224,7 +224,7 @@ function CreateMarketDialog() {
         id: form.id, question: form.question, url: form.url, yesMarker: form.yesMarker, noMarker: form.noMarker,
         lockTime: lockTs, resolveAfter: resolveTs, challengeWindow: windowSeconds, staleAfter: staleSeconds,
       },
-      { onSuccess: () => { setOpen(false); setForm(blank); } } as any
+      { onSuccess: () => { onCreated(form.id); setOpen(false); setForm(blank); } } as any
     );
   };
 
@@ -398,7 +398,8 @@ function MarketHero({ id }: { id: string }) {
   const actions = availableActions(m, { address, now, position });
   const note = recoveryNote(m, now);
   const all = [resolveAction, resolveDisputeAction, staleDisputeAction, finalizeAction, claimAction, reclaimAction];
-  const active = all.find((a) => a.progress);
+  // the action that reported progress most recently, not the first hook that ever did
+  const active = all.filter((a) => a.progress).sort((x, y) => (y.progress?.at ?? 0) - (x.progress?.at ?? 0))[0];
   const staleAt = disputeStaleAt(m);
 
   return (
@@ -575,7 +576,7 @@ export default function HomePage() {
             Every market settles on a fixed, checkable source — never on either side&apos;s word for it.
           </div>
         </div>
-        <CreateMarketDialog />
+        <CreateMarketDialog onCreated={setSelectedId} />
       </div>
 
       <div className="mb-11">

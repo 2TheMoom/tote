@@ -1,3 +1,2 @@
 BTC daily summary
-BTC daily close was above 90000 USD
-Source: example price feed
+The price feed was withdrawn and no close is published

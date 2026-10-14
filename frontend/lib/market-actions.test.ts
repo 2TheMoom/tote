@@ -19,6 +19,7 @@ import {
   stakesReclaimable,
   type Position,
 } from "./market-actions.ts";
+import { failedReceiptMessage } from "./receipt.ts";
 import { formatGen, BOND_BPS, MAX_MARKER, MAX_STALE, MAX_WINDOW, MIN_MARKER, MIN_STALE, MIN_WINDOW, markerProblem, normalizeLine, requiredBond, urlProblem } from "./limits.ts";
 
 const CREATOR = "0x1111111111111111111111111111111111111111";
@@ -261,5 +262,27 @@ describe("formatGen", () => {
     assert.equal(formatGen("500000000000000000"), "0.500");
     assert.equal(formatGen("2500000000000000000"), "2.500");
     assert.equal(formatGen("not a number"), "0.000");
+  });
+});
+
+describe("failedReceiptMessage", () => {
+  it("explains a validator timeout as nothing recorded, even if the wallet shows confirmed", () => {
+    for (const statusName of ["LEADER_TIMEOUT", "VALIDATORS_TIMEOUT", "UNDETERMINED", "CANCELED"]) {
+      const m = failedReceiptMessage({ statusName }, "resolve_dispute", "0xabc");
+      assert.match(m ?? "", /Nothing was recorded/);
+      assert.match(m ?? "", /try again/);
+      assert.match(m ?? "", new RegExp(statusName));
+    }
+    assert.match(failedReceiptMessage({ txExecutionResultName: "NOT_VOTED" }, "settle", "0x1") ?? "", /Nothing was recorded/);
+  });
+  it("reports a contract refusal separately", () => {
+    const m = failedReceiptMessage({ statusName: "ACCEPTED", txExecutionResultName: "FINISHED_WITH_ERROR" }, "verify", "0x2");
+    assert.match(m ?? "", /The contract refused verify/);
+    assert.doesNotMatch(m ?? "", /Validators did not complete/);
+  });
+  it("says nothing when the contract ran and returned", () => {
+    assert.equal(failedReceiptMessage({ statusName: "ACCEPTED", txExecutionResultName: "FINISHED_WITH_RETURN" }, "accept", "0x3"), null);
+    assert.equal(failedReceiptMessage({ statusName: "FINALIZED" }, "accept", "0x3"), null);
+    assert.equal(failedReceiptMessage(undefined, "accept", "0x3"), null);
   });
 });

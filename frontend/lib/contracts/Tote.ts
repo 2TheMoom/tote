@@ -8,6 +8,7 @@ import {
   type FeePresetEstimate,
   type FeePresetLevel,
 } from "../genlayer/fees";
+import { failedReceiptMessage } from "../receipt";
 import { expectedStatus, movesFunds, type MarketAction, type Position } from "../market-actions";
 
 /** Where a write is in its life. Only "confirmed" means the contract state really changed. */
@@ -202,10 +203,9 @@ class Tote {
       console.error(`Error confirming ${functionName} transaction:`, error);
       throw new Error(`Transaction ${txHash} was submitted but is not accepted yet. It may still complete: check the explorer.`);
     }
-    // ACCEPTED only says validators agreed on a result, which can be a revert.
-    if (receipt?.txExecutionResultName && receipt.txExecutionResultName !== "FINISHED_WITH_RETURN") {
-      throw new Error(`The contract refused ${functionName} (${receipt.txExecutionResultName}). Nothing changed. Transaction ${txHash}.`);
-    }
+    // ACCEPTED only says validators agreed on a result, which can be a revert; a timeout records nothing at all.
+    const failure = failedReceiptMessage(receipt, functionName, txHash);
+    if (failure) throw new Error(failure);
     progress("accepted", txHash);
 
     await this.confirmState(opts);
